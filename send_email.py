@@ -66,7 +66,7 @@ def get_crypto_value(crypto):
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={crypto}&vs_currencies=usd"
         response = requests.get(url)
         response.raise_for_status()
-        print(f"Returned {crypto} value: {Fore.YELLOW}{response.json()[crypto]["usd"]}{Style.RESET_ALL}")
+        print(f"Returned {crypto} value: {Fore.YELLOW}{response.json()[crypto]['usd']}{Style.RESET_ALL}")
         return response.json()[crypto]["usd"]
     except requests.exceptions.RequestException as e:
         print(f"Error while fetching cryptocurrency value: {e}")
