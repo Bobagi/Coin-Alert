@@ -23,6 +23,38 @@ bash
 Copy code
 pip3 install requests
 
+> **Importante:** Para serviços como Gmail, você precisará criar um [App Password](https://myaccount.google.com/apppasswords)
+
+### 3. Configurar Ambiente Virtual
+```bash
+python -m venv venv
+```
+
+- **Ativar Ambiente:**
+  ```bash
+  # Linux/MacOS
+  source venv/bin/activate
+  
+  # Windows
+  .\venv\Scripts\activate
+  ```
+
+- **Desativar Ambiente:**
+  ```bash
+  deactivate
+  ```
+
+### 4. Instalar Dependências
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+## ▶️ Execução
+```bash
+python main.py  # Substitua pelo nome real do seu arquivo principal
+```
+
 # Dependencies
 
 To install depencendies run

@@ -28,7 +28,7 @@ def send_email(subject, body, to_email):
 
 def clear_alerts():
     print(f"Cleaning alerts...")
-    url = "https://bobagi.net/api/cryptoAlert/clearAlerts"
+    url = "https://bobagi.click/api/cryptoAlert/clearAlerts"
     try:
         response = requests.post(url)
         response.raise_for_status()
@@ -39,7 +39,7 @@ def clear_alerts():
 
 def clear_alert_by_id(id):
     print(f"Cleaning alert by id {id}...")
-    url = "https://bobagi.net/api/cryptoAlert/clearAlertById"
+    url = "https://bobagi.click/api/cryptoAlert/clearAlertById"
     try:      
         payload = {"id": id}
         
@@ -52,7 +52,7 @@ def clear_alert_by_id(id):
 def get_cryptos():
     print(f"Getting cryptos...")
     try:
-        url = "https://bobagi.net/api/cryptoAlert/getCryptos"
+        url = "https://bobagi.click/api/cryptoAlert/getCryptos"
         response = requests.get(url)
         response.raise_for_status()
         return response.json()
@@ -75,7 +75,7 @@ def get_crypto_value(crypto):
 def get_reachedThresholds(id, cryptoValue):
     print(f"Looking for reached thresholds...")
     try:
-        url = "https://bobagi.net/api/cryptoAlert/reachedThresholds"
+        url = "https://bobagi.click/api/cryptoAlert/reachedThresholds"
         params = {"id": id, "cryptoValue": cryptoValue}
         response = requests.get(url, params=params)
         response.raise_for_status()

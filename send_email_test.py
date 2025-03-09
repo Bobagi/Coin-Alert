@@ -1,6 +1,5 @@
 import os
 import smtplib
-import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
@@ -27,8 +26,6 @@ def send_email(subject, body, to_email):
 while True:
     subject = "Test Email from coin-watcher"
     body = "This is a test email."
-    to_email = os.getenv("DESTINY")
+    to_email = os.getenv("DESTINY_EMAIL")
     send_email(subject, body, to_email)
     print("Email sent successfully!")
-
-    time.sleep(600)  # Sleep for 5 seconds
