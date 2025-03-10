@@ -1,66 +1,140 @@
+Below is the complete downloadable README file (README.md) for your project. Save this content in a file named **README.md** in your project root.
+
+```markdown
 # coin-alert
 
-Python bot to watch coin value changes
+Python bot to watch coin value changes.
 
-Need to define an Email and it's App Password in the .env file, and in DESTINY the email that will receive the message.
+**Note:**  
+- You must define an Email and its App Password in the `.env` file, along with the `DESTINY_EMAIL` variable which is the email that will receive the alert messages.
+- This project was a test to implement the Coin Alert as seen on: [https://bobagi.click/CoinAlert](https://bobagi.net/CoinAlert).
 
-That project was a test to implement the Coin Alert in: https://bobagi.net/CoinAlert
+---
 
-Install Python: If Python is not already installed on your VPS, you'll need to install it. You can do this using the package manager for your operating system. For example, on Ubuntu, you can install Python 3 with the following command:
+## Install Python
 
-bash
-Copy code
+If Python is not already installed on your VPS, you will need to install it. For example, on Ubuntu:
+
+```bash
 sudo apt-get update
 sudo apt-get install python3
-Install pip: If pip is not already installed on your VPS, you'll need to install it. You can do this by running the following command:
-
-bash
-Copy code
-sudo apt-get install python3-pip
-Install any required dependencies: If your script requires any third-party packages, you'll need to install them using pip. For example, if your script uses the requests library, you can install it with the following command:
-
-bash
-Copy code
-pip3 install requests
-
-> **Importante:** Para serviços como Gmail, você precisará criar um [App Password](https://myaccount.google.com/apppasswords)
-
-### 3. Configurar Ambiente Virtual
-```bash
-python -m venv venv
 ```
 
-- **Ativar Ambiente:**
-  ```bash
-  # Linux/MacOS
-  source venv/bin/activate
-  
-  # Windows
-  .\venv\Scripts\activate
-  ```
+## Install pip
 
-- **Desativar Ambiente:**
-  ```bash
-  deactivate
-  ```
+If pip is not already installed on your VPS, install it using:
 
-### 4. Instalar Dependências
 ```bash
-pip install --upgrade pip
+sudo apt-get install python3-pip
+```
+
+## Important
+
+For services like Gmail, you need to create an [App Password](https://myaccount.google.com/apppasswords).
+
+---
+
+## 1. Creating and Activating the Virtual Environment
+
+Open your terminal and run:
+
+```bash
+python -m venv venv  # Creates the virtual environment
+```
+
+To activate the virtual environment:
+
+- **Linux/Mac:**
+
+    ```bash
+    source venv/bin/activate
+    ```
+
+- **Windows:**
+
+    ```bash
+    source venv/Scripts/activate
+    ```
+    or
+    ```bash
+    .\venv\Scripts\Activate
+    ```
+
+To deactivate the environment, simply run:
+
+```bash
+deactivate
+```
+
+---
+
+## 2. Installing Dependencies
+
+First, upgrade pip:
+
+```bash
+python -m pip install --upgrade --force-reinstall pip
+```
+
+Then install the required packages with:
+
+```bash
 pip install -r requirements.txt
 ```
 
-## ▶️ Execução
+If you need to update your `requirements.txt` file, run:
+
 ```bash
-python main.py  # Substitua pelo nome real do seu arquivo principal
+pip freeze > requirements.txt
 ```
 
-# Dependencies
+**Dependencies:**
+- python-dotenv
+- requests
+- secure-smtplib (if applicable)
+- Flask
+- psycopg2-binary
+- colorama
 
-To install depencendies run
+---
 
-`pip install -r requirements.txt`
+## 3. Running the Application
 
-python-dotenv
-requests
-secure-smtplib
+The project has been split into two main components:
+
+1. **API Endpoints** (located in `app.py`):  
+   This file contains the Flask API endpoints (e.g., `/test`, `/registerAlert`, etc.).
+
+2. **Email Monitoring** (located in `scripts/send_email.py`):  
+   This script handles the periodic checking of coin values and sends emails accordingly.
+
+### To run the API:
+
+```bash
+python app.py
+```
+
+### To run the Email Monitoring script:
+
+```bash
+python scripts/send_email.py
+```
+
+> **Note:** In production, you might run the API with a WSGI server (like Gunicorn) instead of using Flask's development server.
+
+---
+
+## Additional Information
+
+- **Email Alerts:**  
+  The email monitoring script periodically (every 10 minutes) checks coin values and sends alerts based on threshold conditions stored in your PostgreSQL database.
+
+- **Database Setup:**  
+  Ensure that you have a PostgreSQL database running with the required tables. Use the provided Docker Compose file and `init.sql` if needed.
+
+---
+
+Enjoy your coin-alert bot!
+```
+
+Simply save the above content in a file named **README.md** and it will serve as the guide for installing, setting up, and running your project.
