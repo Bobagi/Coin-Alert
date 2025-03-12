@@ -24,7 +24,7 @@ conn = psycopg2.connect(
 conn.autocommit = True
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:8080"}})
+CORS(app, resources={r"/*": {"origins": ["http://localhost:8080", "https://localhost:8080"]}})
 
 @app.route("/test", methods=["GET"])
 def test():
