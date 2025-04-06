@@ -1,18 +1,44 @@
-version: '3.8'
+version: "3.8"
 
 services:
   db:
     image: postgres:13
     restart: always
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: cryptoDB
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
-      - "5432:5432"
+      - "${DB_PORT}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  api:
+    build: .
+    depends_on:
+      - db
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: ["python", "app.py"]
+    ports:
+      - "${API_PORT}:5000"
+
+  send_email:
+    build: .
+    depends_on:
+      - db
+    env_file:
+      - .env
+    # environment:
+    #   PYTHONUNBUFFERED: "1"
+    volumes:
+      - .:/app
+    command: ["python", "scripts/send_email.py"]
 
 volumes:
   db_data:

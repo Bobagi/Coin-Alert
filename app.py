@@ -109,8 +109,12 @@ def get_cryptos():
     cur = conn.cursor()
     cur.execute("SELECT id, cryptoId AS cryptoid FROM cripto_currency")
     rows = cur.fetchall()
-    cryptos = [{"id": row[0], "cryptoid": row[1]} for row in rows]
     cur.close()
+    
+    if not rows:
+        return jsonify({"message": "No cryptocurrency found."}), 204
+
+    cryptos = [{"id": row[0], "cryptoid": row[1]} for row in rows]
     return jsonify(cryptos), 200
 
 @app.route("/reachedThresholds", methods=["GET"])
