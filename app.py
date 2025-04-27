@@ -4,6 +4,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 import psycopg2
+from binance_client import test_binance_connection
 
 load_dotenv()
 
@@ -137,6 +138,14 @@ def reached_thresholds():
     thresholds = [{"id": row[0], "threshold": row[1], "greaterthancurrent": row[2], "email": row[3]} for row in rows]
     cur.close()
     return jsonify(thresholds), 200
+
+@app.route("/binanceTest", methods=["GET"])
+def binance_test():
+    result = test_binance_connection()
+    if result["status"] == "success":
+        return jsonify(result), 200
+    else:
+        return jsonify(result), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))

@@ -10,9 +10,7 @@ WORKDIR /app
 
 COPY requirements.txt ./
 RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir gunicorn \
-    && pip install --no-cache-dir binance
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . ./
 

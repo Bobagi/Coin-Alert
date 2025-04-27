@@ -15,6 +15,11 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   api:
     build: .
@@ -31,11 +36,10 @@ services:
   send_email:
     build: .
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env
-    # environment:
-    #   PYTHONUNBUFFERED: "1"
     volumes:
       - .:/app
     command: ["python", "scripts/send_email.py"]
