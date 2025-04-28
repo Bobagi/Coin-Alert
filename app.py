@@ -1,10 +1,10 @@
 import os
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 from dotenv import load_dotenv
 import psycopg2
-from binance_client import test_binance_connection
+from binance_client import test_binance_connection, place_market_order
 
 load_dotenv()
 
@@ -146,6 +146,26 @@ def binance_test():
         return jsonify(result), 200
     else:
         return jsonify(result), 500
+    
+@app.route("/order", methods=["POST"])
+def order():
+    data = request.get_json()
+    symbol   = data.get("symbol")    # ex: "BTCUSDT"
+    side     = data.get("side")      # "BUY" ou "SELL"
+    quantity = data.get("quantity")  # float
+
+    if not all([symbol, side, quantity]):
+        abort(400, "'symbol', 'side' e 'quantity' são obrigatórios")
+
+    try:
+        quantity = float(quantity)
+    except ValueError:
+        abort(400, "'quantity' deve ser número")
+
+    result = place_market_order(symbol, side, quantity)
+
+    status_code = 200 if result["status"]=="success" else 500
+    return jsonify(result), status_code
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
