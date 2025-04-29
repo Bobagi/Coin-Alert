@@ -36,20 +36,25 @@ def get_asset_balance(asset: str = "BTC"):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+from decimal import Decimal, ROUND_DOWN
+from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET
+
 def place_market_order(symbol: str, side: str, quantity: float):
     """
-    symbol: ex. "BTCUSDT"
-    side: "BUY" ou "SELL"
-    quantity: quantidade na unidade base (ex: 0.001 para BTC)
+    Place a market order with quantity formatted as plain decimal string.
     """
     client = get_binance_client()
+    # Convert to Decimal then to string to avoid scientific notation
+    qty_dec = Decimal(str(quantity))
+    qty_str = format(qty_dec, 'f')  # e.g. "0.00002"
     try:
         order = client.create_order(
             symbol=symbol,
-            side=SIDE_BUY   if side.upper()=="BUY"  else SIDE_SELL,
+            side=SIDE_BUY if side.upper() == "BUY" else SIDE_SELL,
             type=ORDER_TYPE_MARKET,
-            quantity=quantity
+            quantity=qty_str
         )
-        return {"status":"success", "order": order, "onTestnet": USE_TESTNET}
+        return {"status": "success", "order": order, "onTestnet": USE_TESTNET}
     except Exception as e:
-        return {"status":"error",   "message": str(e)}
+        return {"status": "error", "message": str(e)}
+
