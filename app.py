@@ -163,8 +163,32 @@ def order():
         abort(400, "'quantity' deve ser número")
 
     result = place_market_order(symbol, side, quantity)
+    # Se sucesso, grava no banco:
+    if result["status"] == "success":
+        order_data = result["order"]
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO trades
+              (order_id, on_testnet, client_order_id, symbol, side, qty, quote_qty, price, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            order_data["orderId"],
+            order_data["onTestnet"],
+            order_data["clientOrderId"],
+            order_data["symbol"],
+            order_data["side"],
+            order_data["executedQty"],
+            order_data["cummulativeQuoteQty"],
+            # se houver vários fills, pegamos o preço do primeiro
+            order_data.get("fills", [{}])[0].get("price"),
+            order_data["status"]
+        ))
+        conn.commit()
+        cur.close()
+        status_code = 200
+    else:
+        status_code = 500
 
-    status_code = 200 if result["status"]=="success" else 500
     return jsonify(result), status_code
 
 if __name__ == "__main__":

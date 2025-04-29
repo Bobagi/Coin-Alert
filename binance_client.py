@@ -5,13 +5,13 @@ from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET
 
 load_dotenv()
 
-USE_TESTNET        = os.getenv("BINANCE_TESTNET", "false").lower() == "true"
+USE_TESTNET = os.getenv("BINANCE_TESTNET", "false").lower() == "true"
 
 if USE_TESTNET:
-    BINANCE_API_KEY    = os.getenv("BINANCE_TESTNET_API_KEY")
+    BINANCE_API_KEY = os.getenv("BINANCE_TESTNET_API_KEY")
     BINANCE_API_SECRET = os.getenv("BINANCE_TESTNET_API_SECRET")
 else:
-    BINANCE_API_KEY    = os.getenv("BINANCE_API_KEY")
+    BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
     BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET")
 
 def get_binance_client():
@@ -19,7 +19,7 @@ def get_binance_client():
         raise Exception("Binance API Key or Secret not set in environment variables.")
 
     client = Client(api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET)
-    
+
     if USE_TESTNET:
         print("Using Binance Testnet")
         client.API_URL = 'https://testnet.binance.vision/api'
@@ -46,7 +46,8 @@ def place_market_order(symbol: str, side: str, quantity: float):
             symbol=symbol,
             side=SIDE_BUY   if side.upper()=="BUY"  else SIDE_SELL,
             type=ORDER_TYPE_MARKET,
-            quantity=quantity
+            quantity=quantity,
+            onTestnet=USE_TESTNET
         )
         return {"status":"success", "order": order}
     except Exception as e:

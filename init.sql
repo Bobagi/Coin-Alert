@@ -22,3 +22,18 @@ CREATE TABLE IF NOT EXISTS cripto_threshold (
     FOREIGN KEY (id_email) REFERENCES cripto_email(id) ON DELETE CASCADE,
     FOREIGN KEY (id_cripto) REFERENCES cripto_currency(id) ON DELETE CASCADE
 );
+
+-- Table trades
+CREATE TABLE IF NOT EXISTS trades (
+    id               SERIAL PRIMARY KEY,
+    order_id         BIGINT   NOT NULL,
+    on_testnet       BOOLEAN  NOT NULL,
+    client_order_id  VARCHAR(100) NOT NULL,
+    symbol           VARCHAR(20)  NOT NULL,
+    side             VARCHAR(4)   NOT NULL,
+    qty              NUMERIC      NOT NULL,
+    quote_qty        NUMERIC      NOT NULL,
+    price            NUMERIC,
+    status           VARCHAR(20)  NOT NULL,
+    created_at       TIMESTAMP    NOT NULL DEFAULT NOW()
+);
