@@ -39,22 +39,46 @@ def get_asset_balance(asset: str = "BTC"):
 from decimal import Decimal, ROUND_DOWN
 from binance.enums import SIDE_BUY, SIDE_SELL, ORDER_TYPE_MARKET
 
-def place_market_order(symbol: str, side: str, quantity: float):
+def place_market_order(symbol: str,
+                       side: str,
+                       quantity: float = None,
+                       quoteOrderQty: float = None):
     """
-    Place a market order with quantity formatted as plain decimal string.
+    - Either quantity (base asset) or quoteOrderQty (quote asset spend) must be provided.
+    - Returns on success: {"status":"success","order": order,...}
+    - On LOT_SIZE error: returns {"status":"error", "message":..., "minQty":..., "stepSize":...}
+    - On other error: {"status":"error","message":...}
     """
     client = get_binance_client()
-    # Convert to Decimal then to string to avoid scientific notation
-    qty_dec = Decimal(str(quantity))
-    qty_str = format(qty_dec, 'f')  # e.g. "0.00002"
-    try:
-        order = client.create_order(
-            symbol=symbol,
-            side=SIDE_BUY if side.upper() == "BUY" else SIDE_SELL,
-            type=ORDER_TYPE_MARKET,
-            quantity=qty_str
-        )
-        return {"status": "success", "order": order, "onTestnet": USE_TESTNET}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    # build params dict
+    params = {
+        "symbol": symbol,
+        "side": SIDE_BUY if side.upper()=="BUY" else SIDE_SELL,
+        "type": ORDER_TYPE_MARKET
+    }
+    if quoteOrderQty is not None:
+        # format as plain decimal
+        params["quoteOrderQty"] = format(Decimal(str(quoteOrderQty)),'f')
+    else:
+        params["quantity"] = format(Decimal(str(quantity)), 'f')
 
+    try:
+        order = client.create_order(**params)
+        return {"status":"success", "order": order, "onTestnet": USE_TESTNET}
+    except Exception as e:
+        err = str(e)
+        # Catch LOT_SIZE filter failures and return minQty/stepSize
+        if "Filter failure: LOT_SIZE" in err:
+            info = client.get_symbol_info(symbol)
+            lot = next(f for f in info['filters'] if f['filterType']=="LOT_SIZE")
+            return {
+                "status":"error",
+                "message": (
+                    f"Quantity too small or invalid for {symbol}. "
+                    f"Minimum is {lot['minQty']} and increments of {lot['stepSize']}."
+                ),
+                "minQty": float(lot['minQty']),
+                "stepSize": float(lot['stepSize'])
+            }
+        return {"status":"error", "message": err}
+    

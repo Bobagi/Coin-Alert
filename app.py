@@ -149,35 +149,40 @@ def binance_test():
     
 @app.route("/order", methods=["POST"])
 def order():
-    try:
-        data = request.get_json()
-        print("[DEBUG] Received data:", data)
-        # seu processamento normal aqui
-    except Exception as e:
-        print("[ERROR] Exception:", str(e))
-        raise
+    data = request.get_json() or {}
+    symbol = data.get("symbol")
+    side   = data.get("side")
+    qty_in = data.get("quantity")
+    quote   = data.get("quoteOrderQty")
 
-    symbol   = data.get("symbol")    # ex: "BTCUSDT"
-    side     = data.get("side")      # "BUY" ou "SELL"
-    quantity = data.get("quantity")  # float
+    # require symbol, side, and one of qty or quote
+    if not symbol or not side or (qty_in is None and quote is None):
+        abort(400, "'symbol', 'side' and either 'quantity' or 'quoteOrderQty' are required")
 
-    if not all([symbol, side, quantity]):
-        abort(400, "'symbol', 'side' e 'quantity' são obrigatórios")
+    # Determine which to use and parse
+    if quote is not None:
+        try:
+            used_amount = float(quote)
+        except ValueError:
+            abort(400, "'quoteOrderQty' must be a number")
+        result = place_market_order(symbol, side, quoteOrderQty=used_amount)
+    else:
+        try:
+            used_amount = float(qty_in)
+        except ValueError:
+            abort(400, "'quantity' must be a number")
+        result = place_market_order(symbol, side, quantity=used_amount)
 
-    try:
-        quantity = float(quantity)
-    except ValueError:
-        abort(400, "'quantity' deve ser número")
-
-    result = place_market_order(symbol, side, quantity)
-    # Se sucesso, grava no banco:
-    if result["status"] == "success":
+    # On success, record and log with the correct amount
+    if result.get("status") == "success":
         order_data = result["order"]
-        print(f"[ORDER] {side} {quantity} {symbol}: {order_data}")
+        print(f"[ORDER] {side} {used_amount} {symbol}: {order_data}")
+
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO trades
-              (order_id, on_testnet, client_order_id, symbol, side, qty, quote_qty, price, status)
+              (order_id, on_testnet, client_order_id, symbol, side,
+               qty, quote_qty, price, status)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             order_data["orderId"],
@@ -187,7 +192,6 @@ def order():
             order_data["side"],
             order_data["executedQty"],
             order_data["cummulativeQuoteQty"],
-            # se houver vários fills, pegamos o preço do primeiro
             order_data.get("fills", [{}])[0].get("price"),
             order_data["status"]
         ))
@@ -195,7 +199,7 @@ def order():
         cur.close()
         status_code = 200
     else:
-        status_code = 500
+        status_code = 400 if "minQty" in result else 500
 
     return jsonify(result), status_code
 
