@@ -46,9 +46,8 @@ def place_market_order(symbol: str, side: str, quantity: float):
             symbol=symbol,
             side=SIDE_BUY   if side.upper()=="BUY"  else SIDE_SELL,
             type=ORDER_TYPE_MARKET,
-            quantity=quantity,
-            onTestnet=USE_TESTNET
+            quantity=quantity
         )
-        return {"status":"success", "order": order}
+        return {"status":"success", "order": order, "onTestnet": USE_TESTNET}
     except Exception as e:
         return {"status":"error",   "message": str(e)}

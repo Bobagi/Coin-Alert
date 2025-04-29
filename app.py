@@ -149,7 +149,14 @@ def binance_test():
     
 @app.route("/order", methods=["POST"])
 def order():
-    data = request.get_json()
+    try:
+        data = request.get_json()
+        print("[DEBUG] Received data:", data)
+        # seu processamento normal aqui
+    except Exception as e:
+        print("[ERROR] Exception:", str(e))
+        raise
+
     symbol   = data.get("symbol")    # ex: "BTCUSDT"
     side     = data.get("side")      # "BUY" ou "SELL"
     quantity = data.get("quantity")  # float
@@ -166,6 +173,7 @@ def order():
     # Se sucesso, grava no banco:
     if result["status"] == "success":
         order_data = result["order"]
+        print(f"[ORDER] {side} {quantity} {symbol}: {order_data}")
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO trades
@@ -173,7 +181,7 @@ def order():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             order_data["orderId"],
-            order_data["onTestnet"],
+            result["onTestnet"],
             order_data["clientOrderId"],
             order_data["symbol"],
             order_data["side"],

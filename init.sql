@@ -37,3 +37,10 @@ CREATE TABLE IF NOT EXISTS trades (
     status           VARCHAR(20)  NOT NULL,
     created_at       TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+
+-- Table auto_positions
+CREATE TABLE IF NOT EXISTS auto_positions (
+    trade_id      BIGINT PRIMARY KEY,
+    purchase_date TIMESTAMP NOT NULL,
+    sell_date     TIMESTAMP
+);
