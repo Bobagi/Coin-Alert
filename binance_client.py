@@ -25,14 +25,16 @@ def get_binance_client():
         client.API_URL = 'https://testnet.binance.vision/api'
     return client
 
-def test_binance_connection():
+def get_asset_balance(asset: str = "BTC"):
     client = get_binance_client()
     try:
         info = client.get_account()
-        btc = next((b for b in info['balances'] if b['asset'] == 'BTC'), None)
-        return {"status":"success","BTC_balance":btc}
+        bal = next((b for b in info["balances"] if b["asset"] == asset.upper()), None)
+        if bal is None:
+            return {"status": "error", "message": f"Asset {asset} not found"}
+        return {"status": "success", f"{asset.upper()}_balance": bal}
     except Exception as e:
-        return {"status":"error","message":str(e)}
+        return {"status": "error", "message": str(e)}
 
 def place_market_order(symbol: str, side: str, quantity: float):
     """

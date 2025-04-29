@@ -4,7 +4,7 @@ from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 from dotenv import load_dotenv
 import psycopg2
-from binance_client import test_binance_connection, place_market_order
+from binance_client import get_asset_balance, place_market_order
 
 load_dotenv()
 
@@ -139,13 +139,13 @@ def reached_thresholds():
     cur.close()
     return jsonify(thresholds), 200
 
-@app.route("/binanceTest", methods=["GET"])
+@app.route("/asset-balance", methods=["GET"])
 def binance_test():
-    result = test_binance_connection()
-    if result["status"] == "success":
-        return jsonify(result), 200
-    else:
-        return jsonify(result), 500
+    asset = request.args.get("asset", "BTC").upper()
+    print(f"[DEBUG] Testing Binance connection for asset: {asset}")
+    result = get_asset_balance(asset)
+    status = 200 if result.get("status") == "success" else 500
+    return jsonify(result), status
     
 @app.route("/order", methods=["POST"])
 def order():
