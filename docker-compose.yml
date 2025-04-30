@@ -45,21 +45,21 @@ services:
       - .:/app
     command: ["python", "scripts/send_email.py"]
 
-  # auto_sell:
-  #   build: .
-  #   restart: always
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #     api:
-  #       condition: service_started
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     API_URL: "http://api:5000"
-  #   volumes:
-  #     - .:/app
-  #   command: ["python", "scripts/auto_sell.py"]
+  auto_sell:
+    build: .
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      API_URL: "http://api:5000"
+    volumes:
+      - .:/app
+    command: ["python", "scripts/auto_sell.py"]
 
   daily_buy:
     build: .

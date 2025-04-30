@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS cripto_threshold (
 -- Table trades
 CREATE TABLE IF NOT EXISTS trades (
     id               SERIAL PRIMARY KEY,
-    order_id         BIGINT   NOT NULL,
+    order_id         BIGINT   NOT NULL UNIQUE,
     on_testnet       BOOLEAN  NOT NULL,
     client_order_id  VARCHAR(100) NOT NULL,
     symbol           VARCHAR(20)  NOT NULL,
@@ -38,9 +38,12 @@ CREATE TABLE IF NOT EXISTS trades (
     created_at       TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 
+
 -- Table auto_positions
 CREATE TABLE IF NOT EXISTS auto_positions (
     trade_id      BIGINT PRIMARY KEY,
     purchase_date TIMESTAMP NOT NULL,
-    sell_date     TIMESTAMP
+    sell_date     TIMESTAMP,
+    sell_trade_id BIGINT,
+    CONSTRAINT fk_sell_trade FOREIGN KEY (sell_trade_id) REFERENCES trades(order_id)
 );

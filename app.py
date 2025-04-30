@@ -4,7 +4,7 @@ from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 from dotenv import load_dotenv
 import psycopg2
-from binance_client import get_asset_balance, place_market_order
+from binance_client import get_asset_balance, place_market_order, place_limit_order
 
 load_dotenv()
 
@@ -140,7 +140,7 @@ def reached_thresholds():
     return jsonify(thresholds), 200
 
 @app.route("/asset-balance", methods=["GET"])
-def binance_test():
+def asset_balance():
     asset = request.args.get("asset", "BTC").upper()
     print(f"[DEBUG] Testing Binance connection for asset: {asset}")
     result = get_asset_balance(asset)
@@ -153,13 +153,11 @@ def order():
     symbol = data.get("symbol")
     side   = data.get("side")
     qty_in = data.get("quantity")
-    quote   = data.get("quoteOrderQty")
+    quote  = data.get("quoteOrderQty")
 
-    # require symbol, side, and one of qty or quote
     if not symbol or not side or (qty_in is None and quote is None):
         abort(400, "'symbol', 'side' and either 'quantity' or 'quoteOrderQty' are required")
 
-    # Determine which to use and parse
     if quote is not None:
         try:
             used_amount = float(quote)
@@ -173,11 +171,8 @@ def order():
             abort(400, "'quantity' must be a number")
         result = place_market_order(symbol, side, quantity=used_amount)
 
-    # On success, record and log with the correct amount
     if result.get("status") == "success":
         order_data = result["order"]
-        print(f"[ORDER] {side} {used_amount} {symbol}: {order_data}")
-
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO trades
@@ -186,7 +181,7 @@ def order():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             order_data["orderId"],
-            result["onTestnet"],
+            result.get("onTestnet", False),
             order_data["clientOrderId"],
             order_data["symbol"],
             order_data["side"],
@@ -197,11 +192,54 @@ def order():
         ))
         conn.commit()
         cur.close()
-        status_code = 200
+        return jsonify(result), 200
     else:
         status_code = 400 if "minQty" in result else 500
+        return jsonify(result), status_code
 
-    return jsonify(result), status_code
+# NEW endpoint for limit orders (sells)
+@app.route("/limit-order", methods=["POST"])
+def limit_order():
+    data = request.get_json() or {}
+    symbol = data.get("symbol")
+    side   = data.get("side")
+    qty    = data.get("quantity")
+    price  = data.get("price")
+
+    if not symbol or not side or not qty or not price:
+        abort(400, "'symbol', 'side', 'quantity' and 'price' are required for limit orders")
+    try:
+        qty = float(qty)
+        price = float(price)
+    except ValueError:
+        abort(400, "'quantity' and 'price' must be numeric")
+
+    result = place_limit_order(symbol, side, quantity=qty, price=price)
+
+    if result.get("status") == "success":
+        order_data = result["order"]
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO trades
+              (order_id, on_testnet, client_order_id, symbol, side,
+               qty, quote_qty, price, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            order_data["orderId"],
+            result.get("onTestnet", False),
+            order_data["clientOrderId"],
+            order_data["symbol"],
+            order_data["side"],
+            order_data["origQty"],
+            order_data.get("origQuoteOrderQty", 0),
+            order_data.get("price"),
+            order_data["status"]
+        ))
+        conn.commit()
+        cur.close()
+        return jsonify(result), 200
+    else:
+        return jsonify(result), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
