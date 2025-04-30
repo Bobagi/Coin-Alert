@@ -106,10 +106,10 @@ def run_email_monitor():
     cycle = 0
     while True:
         cycle += 1
-        print(f"Running cycle {cycle}...")
+        # print(f"Running cycle {cycle}...")
         clear_alerts_local()
         cryptos = get_cryptos_local()
-        print(f"Total cryptos: {len(cryptos)}")
+        # print(f"Total cryptos: {len(cryptos)}")
         for crypto in cryptos:
             crypto_id = crypto['id']
             crypto_name = crypto['cryptoid']
