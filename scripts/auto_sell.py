@@ -5,7 +5,7 @@ import time
 import requests
 import psycopg2
 from dotenv import load_dotenv
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 from datetime import datetime, date, timezone
 from binance_client import get_binance_client
 
@@ -93,36 +93,68 @@ def send_limit_order(params: dict):
     except:
         return {'status':'error','message':r.text}
 
+from decimal import Decimal, ROUND_CEILING
+
+# … your existing imports and helpers: get_pending_positions, get_symbol_filters,
+#    adjust_to_step_size, adjust_to_tick_size, ceil_to_step, send_order, send_limit_order, etc.
+
 def process_sells(conn):
     pending = get_pending_positions(conn)
     if not pending:
         return
 
-    total_qty = sum(Decimal(str(qty)) for (_, _, qty, _) in pending)
+    # 1) Compute total quantity and weighted-average entry price
+    total_qty  = sum(Decimal(str(qty)) for (_, _, qty, _) in pending)
+    total_cost = sum(Decimal(str(qty)) * Decimal(str(price)) for (_, _, qty, price) in pending)
+    avg_price  = total_cost / total_qty
+
+    # 2) Load exchange filters
     step, min_notional, tick = get_symbol_filters(TRADE_SYMBOL)
 
+    # 3) Floor your aggregated qty to the stepSize
     qty_adj = adjust_to_step_size(total_qty, step)
     if qty_adj <= 0:
         print(f"[AUTO-SELL] Adjusted qty {qty_adj} below step {step}")
         return
 
-    current_price = get_current_price(TRADE_SYMBOL)
-    raw_limit_price = current_price * (1 + SELL_THRESHOLD_PCT / Decimal(100))
+    # 4) Calculate your target limit price off your entry price
+    raw_limit_price = avg_price * (1 + SELL_THRESHOLD_PCT / Decimal(100))
     limit_price     = adjust_to_tick_size(raw_limit_price, tick)
 
+    # 5) Check notional
     notional = qty_adj * limit_price
     if notional < min_notional:
-        print(f"[AUTO-SELL] Notional {notional} below minimum {min_notional}")
+        print(f"[AUTO-SELL] Grouped notional {notional} below minNotional {min_notional}, buying extra to meet threshold")
+
+        # Instead of base-qty, spend a fixed quote amount
+        buy_quote = BUY_INCREMENT_QUOTE
+        buy_params = {
+            'symbol':        TRADE_SYMBOL,
+            'side':          'BUY',
+            'quoteOrderQty': format(buy_quote, 'f')
+        }
+        buy_res = send_order(buy_params)
+        print(f"[AUTO-SELL] AUTO-BUY R${buy_quote} of {TRADE_SYMBOL}: {buy_res}")
+
+        if buy_res.get('status') == 'success':
+            b_id = buy_res['order']['orderId']
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO auto_positions(trade_id, purchase_date) "
+                    "VALUES (%s, NOW()) ON CONFLICT DO NOTHING;",
+                    (b_id,)
+                )
         return
 
+    # 6) Place the LIMIT sell
     params = {
         'symbol':   TRADE_SYMBOL,
         'side':     'SELL',
         'quantity': format(qty_adj, 'f'),
-        'price':    format(limit_price, 'f'),
+        'price':    format(limit_price, 'f')
     }
     result = send_limit_order(params)
-    print(f"[AUTO-SELL] LIMIT sell {qty_adj}@{limit_price}: {result}")
+    print(f"[AUTO-SELL] LIMIT sell {qty_adj}@{limit_price} {TRADE_SYMBOL}: {result}")
 
     if result.get('status') == 'success':
         sell_id   = result['order']['orderId']
@@ -163,10 +195,19 @@ def main():
     while True:
         try:
             process_sells(conn)
-            #last_buy_time = process_buys(conn, last_buy_time)
+            last_buy_time = process_buys(conn, last_buy_time)
         except Exception as e:
             print(f"[AUTO-SELL] Loop error: {e}")
         time.sleep(POLL_INTERVAL)
+
+def ceil_to_step(qty: Decimal, step: Decimal) -> Decimal:
+    """
+    Round qty *up* to the nearest multiple of step.
+    E.g. ceil_to_step(0.0000085, 0.00001) == 0.00001
+    """
+    # how many steps, rounded up
+    units = (qty / step).quantize(0, rounding=ROUND_CEILING)
+    return units * step
 
 if __name__=='__main__':
     main()
