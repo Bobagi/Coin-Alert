@@ -60,12 +60,20 @@ def get_total_spent_today(conn):
 
 def get_symbol_filters(symbol: str):
     info = get_binance_client().get_symbol_info(symbol)
-    lot = next(f for f in info['filters'] if f['filterType']=='LOT_SIZE')
-    notional = next(f for f in info['filters'] if f['filterType']=='NOTIONAL')
-    return Decimal(lot['stepSize']), Decimal(notional['minNotional'])
+    lot        = next(f for f in info['filters'] if f['filterType']=='LOT_SIZE')
+    notional   = next(f for f in info['filters'] if f['filterType']=='NOTIONAL')
+    price_filt = next(f for f in info['filters'] if f['filterType']=='PRICE_FILTER')
+    return (
+        Decimal(lot['stepSize']),
+        Decimal(notional['minNotional']),
+        Decimal(price_filt['tickSize']),
+    )
 
 def adjust_to_step_size(qty: Decimal, step: Decimal) -> Decimal:
     return (qty // step) * step
+
+def adjust_to_tick_size(price: Decimal, tick: Decimal) -> Decimal:
+    return (price // tick) * tick
 
 def get_current_price(symbol: str) -> Decimal:
     ticker = get_binance_client().get_symbol_ticker(symbol=symbol)
@@ -91,35 +99,37 @@ def process_sells(conn):
         return
 
     total_qty = sum(Decimal(str(qty)) for (_, _, qty, _) in pending)
-    step, min_notional = get_symbol_filters(TRADE_SYMBOL)
+    step, min_notional, tick = get_symbol_filters(TRADE_SYMBOL)
+
     qty_adj = adjust_to_step_size(total_qty, step)
     if qty_adj <= 0:
-        print(f"[AUTO-SELL] Adjusted grouped qty {qty_adj} below step size {step}")
+        print(f"[AUTO-SELL] Adjusted qty {qty_adj} below step {step}")
         return
 
     current_price = get_current_price(TRADE_SYMBOL)
-    limit_price = (current_price * (1 + SELL_THRESHOLD_PCT / Decimal(100)))
+    raw_limit_price = current_price * (1 + SELL_THRESHOLD_PCT / Decimal(100))
+    limit_price     = adjust_to_tick_size(raw_limit_price, tick)
+
     notional = qty_adj * limit_price
     if notional < min_notional:
-        print(f"[AUTO-SELL] Grouped notional {notional} below minNotional {min_notional}, skipping sell")
+        print(f"[AUTO-SELL] Notional {notional} below minimum {min_notional}")
         return
 
     params = {
-        'symbol': TRADE_SYMBOL,
-        'side': 'SELL',
+        'symbol':   TRADE_SYMBOL,
+        'side':     'SELL',
         'quantity': format(qty_adj, 'f'),
-        'price':    format(limit_price, 'f')
+        'price':    format(limit_price, 'f'),
     }
     result = send_limit_order(params)
-    print(f"[AUTO-SELL] LIMIT sell {qty_adj}@{limit_price} {TRADE_SYMBOL}: {result}")
+    print(f"[AUTO-SELL] LIMIT sell {qty_adj}@{limit_price}: {result}")
 
     if result.get('status') == 'success':
-        sell_id = result['order']['orderId']
+        sell_id   = result['order']['orderId']
         trade_ids = [t for (t, _, _, _) in pending]
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE auto_positions SET sell_trade_id = %s, sell_date = NOW() "
-                "WHERE trade_id = ANY(%s);",
+                "UPDATE auto_positions SET sell_trade_id=%s, sell_date=NOW() WHERE trade_id=ANY(%s)",
                 (sell_id, trade_ids)
             )
 
@@ -153,7 +163,7 @@ def main():
     while True:
         try:
             process_sells(conn)
-            # last_buy_time = process_buys(conn, last_buy_time)
+            #last_buy_time = process_buys(conn, last_buy_time)
         except Exception as e:
             print(f"[AUTO-SELL] Loop error: {e}")
         time.sleep(POLL_INTERVAL)
