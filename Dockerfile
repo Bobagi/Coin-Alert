@@ -1,5 +1,10 @@
 FROM python:3.11-slim
 
+ARG API_PORT=5000
+ENV API_PORT=$API_PORT
+ENV API_URL=http://api:${API_PORT}
+ENV PYTHONUNBUFFERED=1
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential \
@@ -13,8 +18,5 @@ RUN pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY . ./
-
-ENV PYTHONUNBUFFERED=1 \
-    API_PORT=5000
 
 CMD ["python", "app.py"]

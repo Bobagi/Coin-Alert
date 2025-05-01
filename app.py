@@ -251,6 +251,6 @@ def limit_order():
         return jsonify(result), 500
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("API_PORT", 5000))
     logger.info(f"Starting API service on port {port}")
     app.run(host="0.0.0.0", port=port)

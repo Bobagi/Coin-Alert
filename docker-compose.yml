@@ -71,7 +71,7 @@ services:
     env_file:
       - .env
     environment:
-      API_URL: "http://api:5000"
+      API_URL: ${API_URL}
     volumes:
       - .:/app
     command: ["python", "scripts/auto_sell.py"]
@@ -90,7 +90,7 @@ services:
     env_file:
       - .env
     environment:
-      API_URL: "http://api:5000"
+      API_URL: ${API_URL}
     volumes:
       - .:/app
     command: ["python", "scripts/daily_buy.py"]
