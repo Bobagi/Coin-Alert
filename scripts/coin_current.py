@@ -1,4 +1,10 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import requests
+from logger_config import setup_logger
+
+logger = setup_logger("coin-current")
 
 def get_current_price(symbol):
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
@@ -7,10 +13,9 @@ def get_current_price(symbol):
     return data[symbol]['usd']
 
 def main():
-    crypto_symbol = 'bitcoin'  # Replace with the symbol of the cryptocurrency you want to get the price for
-
+    crypto_symbol = 'bitcoin'
     current_price = get_current_price(crypto_symbol)
-    print(f"The current price of {crypto_symbol.upper()} is ${current_price}")
+    logger.info(f"The current price of {crypto_symbol.upper()} is ${current_price}")
 
 if __name__ == "__main__":
     main()

@@ -1,15 +1,18 @@
-#!/usr/bin/env python3
-import os
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import time
 import requests
 from decimal import Decimal
 from datetime import datetime, timezone
+from logger_config import setup_logger
 
-# ← configure these via your .env if you like
+logger = setup_logger("daily-buy")
+
 API_URL        = os.getenv("API_URL", "http://api:5000")
 SYMBOL         = os.getenv("TRADE_SYMBOL", "BTCBRL")
 DAILY_SPEND    = Decimal(os.getenv("DAILY_SPEND_BRL", "10"))
-DIP_HOUR_UTC   = int(os.getenv("DIP_HOUR_UTC", "4"))  # 04:00 UTC
+DIP_HOUR_UTC   = int(os.getenv("DIP_HOUR_UTC", "4"))
 
 BINANCE_REST   = "https://api.binance.com"
 
@@ -26,7 +29,6 @@ def fetch_step_size():
 
 def compute_qty(price: Decimal, spend: Decimal, step: Decimal) -> float:
     raw = spend / price
-    # round UP to the next multiple of stepSize
     units = (raw // step)
     if raw % step != 0:
         units += 1
@@ -40,22 +42,22 @@ def place_order(qty: float):
 
 def main():
     last_date = None
+    logger.info("Starting daily buy script...")
 
     while True:
         now = datetime.now(timezone.utc)
         if now.hour == DIP_HOUR_UTC and now.date() != last_date:
-            print(f"Its time to buy!...")
+            logger.info("It's time to buy!")
             last_date = now.date()
             step = fetch_step_size()
             try:
                 price = fetch_price()
                 qty   = compute_qty(price, DAILY_SPEND, step)
                 code, body = place_order(qty)
-                print(f"{now.isoformat()} | BUY {qty} {SYMBOL} (~R${DAILY_SPEND}) → {code}: {body}")
+                logger.info(f"{now.isoformat()} | BUY {qty} {SYMBOL} (~R${DAILY_SPEND}) → {code}: {body}")
             except Exception as e:
-                print(f"{now.isoformat()} | ERROR executing daily buy: {e}")
+                logger.error(f"{now.isoformat()} | ERROR executing daily buy: {e}")
         time.sleep(10)
 
 if __name__ == "__main__":
-    print(f"Starting daily buy script...")
     main()

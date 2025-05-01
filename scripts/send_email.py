@@ -1,16 +1,18 @@
-import os
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import smtplib
 import time
 import requests
 import psycopg2
-from colorama import Fore, Style
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+from logger_config import setup_logger
 
 load_dotenv()
+logger = setup_logger("send-email")
 
-# Database configuration
 DB_HOST = os.getenv("DB_HOST")
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
@@ -40,6 +42,7 @@ def send_email(subject, body, to_email):
     text = msg.as_string()
     server.sendmail(from_email, to_email, text)
     server.quit()
+    logger.info(f"Sent email to {to_email}")
 
 def clear_alerts_local():
     cur = conn.cursor()
@@ -76,14 +79,14 @@ def get_crypto_value_local(crypto):
         response = requests.get(url)
         response.raise_for_status()
         value = response.json()[crypto]["usd"]
-        print(f"Returned {crypto} value: {Fore.YELLOW}{value}{Style.RESET_ALL}")
+        logger.info(f"Returned {crypto} value: {value}")
         return value
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching {crypto} value: {e}")
+        logger.error(f"Error fetching {crypto} value: {e}")
         return None
 
 def get_reached_thresholds_local(crypto_id, crypto_value):
-    print(f"Checking thresholds for crypto id: {crypto_id}, value: {crypto_value}")
+    logger.info(f"Checking thresholds for crypto id: {crypto_id}, value: {crypto_value}")
     cur = conn.cursor()
     cur.execute("""
         SELECT ct.id, ct.threshold, ct.greaterthancurrent, ce.email
@@ -99,21 +102,21 @@ def get_reached_thresholds_local(crypto_id, crypto_value):
     rows = cur.fetchall()
     thresholds = [{"id": row[0], "threshold": row[1], "greaterthancurrent": row[2], "email": row[3]} for row in rows]
     cur.close()
-    print(f"Returned thresholds: {thresholds}")
+    logger.info(f"Returned thresholds: {thresholds}")
     return thresholds
 
 def run_email_monitor():
     cycle = 0
     while True:
         cycle += 1
-        # print(f"Running cycle {cycle}...")
+        logger.info(f"Running cycle {cycle}...")
         clear_alerts_local()
         cryptos = get_cryptos_local()
-        # print(f"Total cryptos: {len(cryptos)}")
+        logger.info(f"Total cryptos: {len(cryptos)}")
         for crypto in cryptos:
             crypto_id = crypto['id']
             crypto_name = crypto['cryptoid']
-            print(f"Processing crypto id: {crypto_id}, name: {crypto_name}")
+            logger.info(f"Processing crypto id: {crypto_id}, name: {crypto_name}")
             value = get_crypto_value_local(crypto_name)
             if value is None:
                 continue
@@ -126,7 +129,7 @@ def run_email_monitor():
                 subject = f"{crypto_name} Alert - Price went {'up' if greater else 'down'}"
                 body = f"The value of {crypto_name} reached the threshold of {threshold}. Current value: {value}"
                 send_email(subject, body, email)
-                print(f"Sent alert email for {crypto_name} to {email}")
+                logger.info(f"Sent alert email for {crypto_name} to {email}")
                 clear_alert_by_id_local(alert_id)
         time.sleep(60)
 

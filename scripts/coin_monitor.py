@@ -1,13 +1,16 @@
-import os
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import requests
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+from logger_config import setup_logger
 
 load_dotenv()
+logger = setup_logger("coin-monitor")
 
-# Function to fetch cryptocurrency data
 def get_crypto_data(symbol):
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
     response = requests.get(url)
@@ -20,7 +23,6 @@ def get_all_cryptos():
     data = response.json()
     return [crypto['symbol'] for crypto in data]
 
-# Function to send email alert
 def send_email_alert(to_email, subject, body):
     from_email = os.getenv("EMAIL")
     password = os.getenv("PASSWORD")
@@ -34,22 +36,20 @@ def send_email_alert(to_email, subject, body):
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login(from_email, password)
-    text = msg.as_string()
-    server.sendmail(from_email, to_email, text)
+    server.sendmail(from_email, to_email, msg.as_string())
     server.quit()
+    logger.info(f"Sent email alert to {to_email} with subject '{subject}'")
 
-# Main function
 def main():
-    # Replace 'btc' with the symbol of the cryptocurrency you want to monitor
     crypto_symbol = 'bitcoin'
-    threshold_price = 50000  # Update with your desired threshold price
+    threshold_price = 50000
 
     all_cryptos = get_all_cryptos()
-    print(f"All possible cryptocurrencies: {all_cryptos}")
+    logger.info(f"Loaded {len(all_cryptos)} cryptocurrencies from CoinGecko")
 
     current_price = get_crypto_data(crypto_symbol)
     if current_price > threshold_price:
-        print(f"Current price bigger than threshold, sending email...")
+        logger.info("Current price exceeds threshold, sending email...")
         send_email_alert(os.getenv("DESTINY"), 'Crypto Alert', f'The price of {crypto_symbol.upper()} has crossed ${threshold_price}.')
 
 if __name__ == "__main__":

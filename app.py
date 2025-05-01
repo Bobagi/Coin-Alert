@@ -5,10 +5,12 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import psycopg2
 from binance_client import get_asset_balance, place_market_order, place_limit_order
+from logger_config import setup_logger
 
 load_dotenv()
 
-# Database configuration
+logger = setup_logger("api-service")
+
 DB_HOST = os.getenv("DB_HOST")
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
@@ -49,6 +51,7 @@ def register_alert():
         usd = float(price_data[crypto_id]['usd'])
         brl = float(price_data[crypto_id]['brl'])
     except Exception as e:
+        logger.error(f"Failed to fetch price from CoinGecko: {e}")
         return jsonify({"error": "CoinGecko Service Unavailable"}), 503
 
     current_value = usd
@@ -76,6 +79,7 @@ def register_alert():
         )
     """, (email, symbol, converted_threshold, greater_than_current))
     cur.close()
+    logger.info(f"Registered alert for {email} on {symbol} with threshold {converted_threshold}")
     return jsonify({"success": True}), 201
 
 @app.route("/clearAlerts", methods=["POST"])
@@ -94,6 +98,7 @@ def clear_alerts():
         WHERE id IN (SELECT id FROM repeated_alerts WHERE rn > 1)
     """)
     cur.close()
+    logger.info("Old and duplicate alerts cleared")
     return jsonify({"success": True}), 201
 
 @app.route("/clearAlertById", methods=["POST"])
@@ -103,6 +108,7 @@ def clear_alert_by_id():
     cur = conn.cursor()
     cur.execute("DELETE FROM cripto_threshold WHERE id = %s", (alert_id,))
     cur.close()
+    logger.info(f"Alert {alert_id} cleared")
     return jsonify({"success": True}), 201
 
 @app.route("/getCryptos", methods=["GET"])
@@ -111,7 +117,7 @@ def get_cryptos():
     cur.execute("SELECT id, cryptoId AS cryptoid FROM cripto_currency")
     rows = cur.fetchall()
     cur.close()
-    
+
     if not rows:
         return jsonify({"message": "No cryptocurrency found."}), 204
 
@@ -142,11 +148,11 @@ def reached_thresholds():
 @app.route("/asset-balance", methods=["GET"])
 def asset_balance():
     asset = request.args.get("asset", "BTC").upper()
-    print(f"[DEBUG] Testing Binance connection for asset: {asset}")
+    logger.info(f"Requesting balance for asset: {asset}")
     result = get_asset_balance(asset)
     status = 200 if result.get("status") == "success" else 500
     return jsonify(result), status
-    
+
 @app.route("/order", methods=["POST"])
 def order():
     data = request.get_json() or {}
@@ -192,12 +198,13 @@ def order():
         ))
         conn.commit()
         cur.close()
+        logger.info(f"Market order placed: {order_data['orderId']}")
         return jsonify(result), 200
     else:
+        logger.error(f"Order failed: {result}")
         status_code = 400 if "minQty" in result else 500
         return jsonify(result), status_code
 
-# NEW endpoint for limit orders (sells)
 @app.route("/limit-order", methods=["POST"])
 def limit_order():
     data = request.get_json() or {}
@@ -237,10 +244,13 @@ def limit_order():
         ))
         conn.commit()
         cur.close()
+        logger.info(f"Limit order placed: {order_data['orderId']}")
         return jsonify(result), 200
     else:
+        logger.error(f"Limit order failed: {result}")
         return jsonify(result), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
+    logger.info(f"Starting API service on port {port}")
     app.run(host="0.0.0.0", port=port)
