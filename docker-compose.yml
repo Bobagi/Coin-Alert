@@ -33,7 +33,7 @@ services:
     volumes:
       - .:/app
     ports:
-      - "${API_PORT}:5000"
+      - "${API_PORT}:5010"
     logging:
       driver: json-file
       options:

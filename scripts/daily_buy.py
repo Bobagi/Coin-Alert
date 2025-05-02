@@ -9,7 +9,7 @@ from logger_config import setup_logger
 
 logger = setup_logger("daily-buy")
 
-API_URL        = os.getenv("API_URL", "http://api:5000")
+API_URL        = os.getenv("API_URL", "http://api:5010")
 SYMBOL         = os.getenv("TRADE_SYMBOL", "BTCBRL")
 DAILY_SPEND    = Decimal(os.getenv("DAILY_SPEND_BRL", "10"))
 DIP_HOUR_UTC   = int(os.getenv("DIP_HOUR_UTC", "4"))
