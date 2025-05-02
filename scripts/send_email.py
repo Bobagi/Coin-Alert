@@ -52,7 +52,7 @@ def clear_alerts_local():
     """)
     cur.execute("""
         WITH repeated_alerts AS (
-            SELECT id, ROW_NUMBER() OVER (PARTITION BY id_cripto, id_email, greaterthancurrent ORDER BY created_at DESC) AS rn
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY id_cripto, id_email, greater_than_current ORDER BY created_at DESC) AS rn
             FROM cripto_threshold
         )
         DELETE FROM cripto_threshold
@@ -89,18 +89,18 @@ def get_reached_thresholds_local(crypto_id, crypto_value):
     logger.info(f"Checking thresholds for crypto id: {crypto_id}, value: {crypto_value}")
     cur = conn.cursor()
     cur.execute("""
-        SELECT ct.id, ct.threshold, ct.greaterthancurrent, ce.email
+        SELECT ct.id, ct.threshold, ct.greater_than_current, ce.email
         FROM cripto_threshold ct
         INNER JOIN cripto_currency cc ON cc.id = ct.id_cripto
         INNER JOIN cripto_email ce ON ce.id = ct.id_email
         WHERE ct.id_cripto = %s
         AND CASE 
-            WHEN ct.greaterthancurrent = TRUE THEN ct.threshold <= %s
+            WHEN ct.greater_than_current = TRUE THEN ct.threshold <= %s
             ELSE ct.threshold >= %s
         END
     """, (crypto_id, crypto_value, crypto_value))
     rows = cur.fetchall()
-    thresholds = [{"id": row[0], "threshold": row[1], "greaterthancurrent": row[2], "email": row[3]} for row in rows]
+    thresholds = [{"id": row[0], "threshold": row[1], "greater_than_current": row[2], "email": row[3]} for row in rows]
     cur.close()
     logger.info(f"Returned thresholds: {thresholds}")
     return thresholds
@@ -124,7 +124,7 @@ def run_email_monitor():
             for alert in alerts:
                 alert_id = alert['id']
                 threshold = alert['threshold']
-                greater = alert['greaterthancurrent']
+                greater = alert['greater_than_current']
                 email = alert['email']
                 subject = f"{crypto_name} Alert - Price went {'up' if greater else 'down'}"
                 body = f"The value of {crypto_name} reached the threshold of {threshold}. Current value: {value}"

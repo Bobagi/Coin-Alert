@@ -67,11 +67,11 @@ def register_alert():
         (email,)
     )
     cur.execute(
-        "INSERT INTO cripto_currency (symbol, cryptoId) VALUES (%s, %s) ON CONFLICT (symbol) DO NOTHING",
+        "INSERT INTO cripto_currency (symbol, crypto_id) VALUES (%s, %s) ON CONFLICT (symbol) DO NOTHING",
         (symbol, crypto_id)
     )
     cur.execute("""
-        INSERT INTO cripto_threshold (id_email, id_cripto, threshold, greaterThanCurrent, created_at)
+        INSERT INTO cripto_threshold (id_email, id_cripto, threshold, greater_than_current, created_at)
         VALUES (
             (SELECT id FROM cripto_email WHERE email = %s),
             (SELECT id FROM cripto_currency WHERE symbol = %s),
@@ -91,7 +91,7 @@ def clear_alerts():
     """)
     cur.execute("""
         WITH repeated_alerts AS (
-            SELECT id, ROW_NUMBER() OVER (PARTITION BY id_cripto, id_email, greaterthancurrent ORDER BY created_at DESC) AS rn
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY id_cripto, id_email, greater_than_current ORDER BY created_at DESC) AS rn
             FROM cripto_threshold
         )
         DELETE FROM cripto_threshold
@@ -114,7 +114,7 @@ def clear_alert_by_id():
 @app.route("/getCryptos", methods=["GET"])
 def get_cryptos():
     cur = conn.cursor()
-    cur.execute("SELECT id, cryptoId AS cryptoid FROM cripto_currency")
+    cur.execute("SELECT id, crypto_id FROM cripto_currency")
     rows = cur.fetchall()
     cur.close()
 
@@ -130,13 +130,13 @@ def reached_thresholds():
     crypto_value = float(request.args.get("cryptoValue"))
     cur = conn.cursor()
     cur.execute("""
-        SELECT ct.id, ct.threshold, ct.greaterthancurrent, ce.email
+        SELECT ct.id, ct.threshold, ct.greater_than_current, ce.email
         FROM cripto_threshold ct
         INNER JOIN cripto_currency cc ON cc.id = ct.id_cripto
         INNER JOIN cripto_email ce ON ce.id = ct.id_email
         WHERE ct.id_cripto = %s
         AND CASE 
-            WHEN ct.greaterthancurrent = TRUE THEN ct.threshold <= %s
+            WHEN ct.greater_than_current = TRUE THEN ct.threshold <= %s
             ELSE ct.threshold >= %s
         END
     """, (crypto_id, crypto_value, crypto_value))
