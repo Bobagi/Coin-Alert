@@ -23,7 +23,7 @@ DB_CONFIG = {
     'password': os.getenv('DB_PASSWORD'),
     'port': os.getenv('DB_PORT', 5432)
 }
-API_URL              = os.getenv('API_URL', 'http://api:5010')
+API_URL              = os.getenv('API_URL', 'http://api:5020')
 TRADE_SYMBOL         = os.getenv('TRADE_SYMBOL', 'BTCBRL')
 SELL_THRESHOLD_PCT   = Decimal(os.getenv('SELL_THRESHOLD_PCT', '1.0'))
 PURCHASE_LIMIT_QUOTE = Decimal(os.getenv('PURCHASE_LIMIT_QUOTE', '100.0'))

@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-ENV API_PORT=5010
+ENV API_PORT=5020
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update \
