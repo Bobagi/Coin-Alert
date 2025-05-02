@@ -32,7 +32,6 @@ services:
       - .env
     volumes:
       - .:/app
-    command: ["python", "app.py"]
     ports:
       - "${API_PORT}:5000"
     logging:

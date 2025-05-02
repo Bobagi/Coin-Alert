@@ -67,7 +67,7 @@ def clear_alert_by_id_local(alert_id):
 
 def get_cryptos_local():
     cur = conn.cursor()
-    cur.execute("SELECT id, cryptoId AS cryptoid FROM cripto_currency")
+    cur.execute("SELECT id, crypto_id AS cryptoid FROM cripto_currency")
     rows = cur.fetchall()
     cryptos = [{"id": row[0], "cryptoid": row[1]} for row in rows]
     cur.close()
