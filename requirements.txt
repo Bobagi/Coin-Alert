@@ -29,3 +29,6 @@ python-binance
 cryptography
 ccxt
 aiohttp
+alembic
+SQLAlchemy>=1.4
+psycopg2-binary

@@ -118,3 +118,45 @@ python scripts/send_email.py
 
 - **Database Setup:**  
   Ensure that you have a PostgreSQL database running with the required tables. Use the provided Docker Compose file and `init.sql` if needed.
+
+
+
+
+
+```bash
+echo '
+## 🛠 Como gerar e aplicar migrações do banco
+
+### 1. Gerar um novo arquivo de migração automaticamente
+Sempre que você adicionar, remover ou modificar modelos no `models.py`, gere uma nova migração com:
+
+```bash
+docker compose run --rm api alembic revision --autogenerate -m "mensagem_descrevendo_a_migracao"
+```
+
+> Exemplo:
+> `docker compose run --rm api alembic revision --autogenerate -m "add tabela cripto_test"`
+
+---
+
+### 2. Aplicar as migrações pendentes ao banco
+Após gerar a migração, aplique ao banco com:
+
+```bash
+docker compose run --rm api alembic upgrade head
+```
+
+---
+
+### 3. Resetar tudo (opcional)
+Se quiser apagar o banco e tudo que foi gerado:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+Isso reinicia a base e recria o banco do zero.
+' >> README.md
+```
+
+Esse comando adiciona tudo direto no seu `README.md`. Quer que isso também rode `upgrade head` automaticamente no `entrypoint.sh` do container `api`?
