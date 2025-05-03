@@ -160,6 +160,7 @@ def order():
     side   = data.get("side")
     qty_in = data.get("quantity")
     quote  = data.get("quoteOrderQty")
+    operation_type = data.get("operationType")
 
     if not symbol or not side or (qty_in is None and quote is None):
         abort(400, "'symbol', 'side' and either 'quantity' or 'quoteOrderQty' are required")
@@ -183,8 +184,8 @@ def order():
         cur.execute("""
             INSERT INTO trades
               (order_id, on_testnet, client_order_id, symbol, side,
-               qty, quote_qty, price, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+               qty, quote_qty, price, status, operation_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             order_data["orderId"],
             result.get("onTestnet", False),
@@ -194,7 +195,8 @@ def order():
             order_data["executedQty"],
             order_data["cummulativeQuoteQty"],
             order_data.get("fills", [{}])[0].get("price"),
-            order_data["status"]
+            order_data["status"],
+            operation_type
         ))
         conn.commit()
         cur.close()
@@ -212,6 +214,7 @@ def limit_order():
     side   = data.get("side")
     qty    = data.get("quantity")
     price  = data.get("price")
+    operation_type = data.get("operationType")
 
     if not symbol or not side or not qty or not price:
         abort(400, "'symbol', 'side', 'quantity' and 'price' are required for limit orders")
@@ -229,8 +232,8 @@ def limit_order():
         cur.execute("""
             INSERT INTO trades
               (order_id, on_testnet, client_order_id, symbol, side,
-               qty, quote_qty, price, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+               qty, quote_qty, price, status, operation_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             order_data["orderId"],
             result.get("onTestnet", False),
@@ -240,7 +243,8 @@ def limit_order():
             order_data["origQty"],
             order_data.get("origQuoteOrderQty", 0),
             order_data.get("price"),
-            order_data["status"]
+            order_data["status"],
+            operation_type
         ))
         conn.commit()
         cur.close()

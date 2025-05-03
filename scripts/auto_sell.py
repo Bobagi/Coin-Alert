@@ -159,7 +159,7 @@ def process_sells(conn):
     if notional < min_notional:
         logger.warning(f"Grouped notional {notional} below minNotional {min_notional}, auto-buying to meet threshold")
         buy_quote = BUY_INCREMENT_QUOTE
-        buy_params = {'symbol': TRADE_SYMBOL, 'side': 'BUY', 'quoteOrderQty': format(buy_quote, 'f')}
+        buy_params = {'symbol': TRADE_SYMBOL, 'side': 'BUY', 'quoteOrderQty': format(buy_quote, 'f'), 'operation_type': 'AUTOB'}
         buy_res = send_order(buy_params)
         logger.info(f"AUTO-BUY R${buy_quote} of {TRADE_SYMBOL}: {buy_res}")
         if buy_res.get('status') == 'success':
@@ -174,7 +174,7 @@ def process_sells(conn):
             logger.info(f"Post-auto-buy locked R${locked:.8f}, remaining R${remaining:.8f}")
         return
 
-    params = {'symbol': TRADE_SYMBOL, 'side': 'SELL', 'quantity': format(qty_adj, 'f'), 'price': format(limit_price, 'f')}
+    params = {'symbol': TRADE_SYMBOL, 'side': 'SELL', 'quantity': format(qty_adj, 'f'), 'price': format(limit_price, 'f'), 'operation_type': 'AUTOS'}
     result = send_limit_order(params)
     logger.info(f"LIMIT sell {qty_adj}@{limit_price} {TRADE_SYMBOL}: {result}")
     if result.get('status') == 'success':
@@ -199,7 +199,7 @@ def process_buys(conn, last_buy_time):
         return last_buy_time
 
     increment = BUY_INCREMENT_QUOTE if remaining >= BUY_INCREMENT_QUOTE else remaining
-    params    = {'symbol': TRADE_SYMBOL, 'side': 'BUY', 'quoteOrderQty': format(increment, 'f')}
+    params    = {'symbol': TRADE_SYMBOL, 'side': 'BUY', 'quoteOrderQty': format(increment, 'f'), 'operation_type': 'AUTOB'}
     result    = send_order(params)
     logger.info(f"Buy R${increment} of {TRADE_SYMBOL}: {result}")
 

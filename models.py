@@ -44,7 +44,7 @@ class Trades(Base):
     price = Column(Numeric)
     status = Column(String(20), nullable=False)
     created_at = Column("created_at", DateTime, nullable=False, server_default=func.now())
-
+    operation_type = Column(String(5))
 
 class AutoPositions(Base):
     __tablename__ = 'auto_positions'

@@ -36,7 +36,7 @@ def compute_qty(price: Decimal, spend: Decimal, step: Decimal) -> float:
     return float(qty)
 
 def place_order(qty: float):
-    payload = {"symbol": SYMBOL, "side": "BUY", "quantity": qty}
+    payload = {"symbol": SYMBOL, "side": "BUY", "quantity": qty, "operation_type": "DAILY"}
     r = requests.post(f"{API_URL}/order", json=payload)
     return r.status_code, r.text
 
@@ -54,7 +54,7 @@ def main():
                 price = fetch_price()
                 qty   = compute_qty(price, DAILY_SPEND, step)
                 code, body = place_order(qty)
-                logger.info(f"{now.isoformat()} | BUY {qty} {SYMBOL} (~R${DAILY_SPEND}) → {code}: {body}")
+                logger.info(f"{now.isoformat()} | DAILY BUY {qty} {SYMBOL} (~R${DAILY_SPEND}) → {code}: {body}")
             except Exception as e:
                 logger.error(f"{now.isoformat()} | ERROR executing daily buy: {e}")
         time.sleep(10)
