@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dashboard</title>
+  </head>
+  <body>
+    <h1>Coin-Alert Dashboard</h1>
+
+    <h2>Cripto Thresholds</h2>
+    <ul>
+      {% for t in thresholds %}
+      <li>
+        {{ t.email }} - {{ t.symbol }} - {{ t.threshold }} - {{ '>' if
+        t.greaterThanCurrent else '<' }}
+      </li>
+      {% endfor %}
+    </ul>
+
+    <h2>Most recente logs</h2>
+    <pre>{{ logs }}</pre>
+  </body>
+</html>

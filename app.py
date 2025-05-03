@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import psycopg2
 from binance_client import get_asset_balance, place_market_order, place_limit_order
 from logger_config import setup_logger
+from routes.dashboard import dashboard_bp
 
 load_dotenv()
 
@@ -28,6 +29,8 @@ conn.autocommit = True
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["http://localhost:8080", "https://localhost:8080"]}})
+
+app.register_blueprint(dashboard_bp)
 
 @app.route("/test", methods=["GET"])
 def test():
