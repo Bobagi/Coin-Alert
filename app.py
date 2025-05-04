@@ -151,8 +151,18 @@ def reached_thresholds():
 @app.route("/asset-balance", methods=["GET"])
 def asset_balance():
     asset = request.args.get("asset", "BTC").upper()
-    logger.info(f"Requesting balance for asset: {asset}")
-    result = get_asset_balance(asset)
+    user_id = request.args.get("userId")
+
+    if not user_id:
+        return jsonify({"error": "'userId' is required"}), 400
+
+    try:
+        user_id = int(user_id)
+    except ValueError:
+        return jsonify({"error": "'userId' must be an integer"}), 400
+
+    logger.info(f"Requesting balance for asset: {asset} (user_id={user_id})")
+    result = get_asset_balance(asset, user_id=user_id)
     status = 200 if result.get("status") == "success" else 500
     return jsonify(result), status
 
@@ -160,26 +170,25 @@ def asset_balance():
 def order():
     data = request.get_json() or {}
     symbol = data.get("symbol")
-    side   = data.get("side")
+    side = data.get("side")
     qty_in = data.get("quantity")
-    quote  = data.get("quoteOrderQty")
+    quote = data.get("quoteOrderQty")
     operation_type = data.get("operationType")
+    user_id = data.get("userId")
 
-    if not symbol or not side or (qty_in is None and quote is None):
-        abort(400, "'symbol', 'side' and either 'quantity' or 'quoteOrderQty' are required")
+    if not symbol or not side or (qty_in is None and quote is None) or user_id is None:
+        abort(400, "'symbol', 'side', 'userId' and either 'quantity' or 'quoteOrderQty' are required")
 
-    if quote is not None:
-        try:
+    try:
+        user_id = int(user_id)
+        if quote is not None:
             used_amount = float(quote)
-        except ValueError:
-            abort(400, "'quoteOrderQty' must be a number")
-        result = place_market_order(symbol, side, quoteOrderQty=used_amount)
-    else:
-        try:
+            result = place_market_order(symbol, side, user_id=user_id, quoteOrderQty=used_amount)
+        else:
             used_amount = float(qty_in)
-        except ValueError:
-            abort(400, "'quantity' must be a number")
-        result = place_market_order(symbol, side, quantity=used_amount)
+            result = place_market_order(symbol, side, user_id=user_id, quantity=used_amount)
+    except ValueError:
+        abort(400, "'quantity' or 'quoteOrderQty' must be a number")
 
     if result.get("status") == "success":
         order_data = result["order"]
@@ -210,24 +219,28 @@ def order():
         status_code = 400 if "minQty" in result else 500
         return jsonify(result), status_code
 
+
 @app.route("/limit-order", methods=["POST"])
 def limit_order():
     data = request.get_json() or {}
     symbol = data.get("symbol")
-    side   = data.get("side")
-    qty    = data.get("quantity")
-    price  = data.get("price")
+    side = data.get("side")
+    qty = data.get("quantity")
+    price = data.get("price")
+    user_id = data.get("userId")
     operation_type = data.get("operationType")
 
-    if not symbol or not side or not qty or not price:
-        abort(400, "'symbol', 'side', 'quantity' and 'price' are required for limit orders")
+    if not symbol or not side or not qty or not price or user_id is None:
+        abort(400, "'symbol', 'side', 'quantity', 'price' and 'userId' are required for limit orders")
+
     try:
         qty = float(qty)
         price = float(price)
+        user_id = int(user_id)
     except ValueError:
         abort(400, "'quantity' and 'price' must be numeric")
 
-    result = place_limit_order(symbol, side, quantity=qty, price=price)
+    result = place_limit_order(symbol, side, quantity=qty, price=price, user_id=user_id)
 
     if result.get("status") == "success":
         order_data = result["order"]

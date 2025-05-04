@@ -57,6 +57,8 @@ class UserCredentials(Base):
     email = Column(String(255), unique=True, nullable=False)
     api_key = Column(String(255), nullable=False)
     api_secret = Column(String(255), nullable=False)
+    testnet_api_key = Column(String(255), nullable=True)
+    testnet_api_secret = Column(String(255), nullable=True)
 
 class DailyPurchaseConfig(Base):
     __tablename__ = 'daily_purchase_config'
