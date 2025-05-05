@@ -45,11 +45,13 @@ class Trades(Base):
 class AutoPositions(Base):
     __tablename__ = 'auto_positions'
     trade_id = Column(BigInteger, primary_key=True)
+    user_id = Column(Integer, ForeignKey('user_credentials.id', ondelete="CASCADE"), nullable=False)
     purchase_date = Column(DateTime, nullable=False)
     sell_date = Column(DateTime)
     sell_trade_id = Column(BigInteger, ForeignKey('trades.order_id'))
 
     sell_trade = relationship("Trades", foreign_keys=[sell_trade_id])
+    user = relationship("UserCredentials", backref="auto_positions")
 
 class UserCredentials(Base):
     __tablename__ = 'user_credentials'
@@ -64,7 +66,7 @@ class DailyPurchaseConfig(Base):
     __tablename__ = 'daily_purchase_config'
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('user_credentials.id', ondelete="CASCADE"), nullable=False)
-    crypto_symbol = Column(String(50), nullable=False)
+    crypto_symbol = Column(String(10), nullable=False)
     amount_brl = Column(Numeric, nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
@@ -74,6 +76,7 @@ class AutoBuyQuota(Base):
     __tablename__ = 'auto_buy_quota'
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('user_credentials.id', ondelete="CASCADE"), nullable=False)
+    crypto_symbol = Column(String(10), nullable=False)
     quota_limit_brl = Column(Numeric, nullable=False)
     quota_used_brl = Column(Numeric, nullable=False, default=0)
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

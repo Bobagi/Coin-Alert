@@ -135,7 +135,7 @@ docker compose run --rm api alembic revision --autogenerate -m "mensagem_descrev
 ```
 
 > Exemplo:
-> `docker compose run --rm api alembic revision --autogenerate -m "add tabela cripto_test"`
+> `docker compose run --rm api alembic revision --autogenerate -m "add user id at auto buy"`
 
 ---
 
