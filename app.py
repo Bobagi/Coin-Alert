@@ -273,4 +273,7 @@ def limit_order():
 if __name__ == "__main__":
     port = int(os.getenv("API_PORT", 5020))
     logger.info(f"Starting API service on port {port}")
+    logger.info(
+        "Dashboard available at http://localhost:%s/dashboard", port
+    )
     app.run(host="0.0.0.0", port=port)
