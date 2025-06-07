@@ -37,7 +37,10 @@
     </ul>
 
     <h2>Daily Buy</h2>
-    <p>Daily purchases occur at {{ dip_hour }}:00 UTC.</p>
+    <p>
+      Daily purchases occur at {{ dip_hour_utc }}:00 UTC
+      ({{ dip_hour_brl }}:00 BRT) with each buy spending R${{ daily_spend_brl }}.
+    </p>
     <ul>
       {% for c in daily_configs %}
       <li>{{ c.email }} - {{ c.symbol }} - R${{ c.amount_brl }}</li>

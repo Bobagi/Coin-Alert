@@ -57,7 +57,9 @@ def dashboard():
         }
         for d in daily_data
     ]
-    dip_hour = os.getenv("DIP_HOUR_UTC", "4")
+    dip_hour_utc = int(os.getenv("DIP_HOUR_UTC", "4"))
+    dip_hour_brl = (dip_hour_utc - 3) % 24
+    daily_spend_brl = float(os.getenv("DAILY_SPEND_BRL", "0"))
 
     # Auto sell quotas
     quota_data = (
@@ -98,7 +100,9 @@ def dashboard():
         thresholds=thresholds,
         logs=logs,
         daily_configs=daily_configs,
-        dip_hour=dip_hour,
+        dip_hour_utc=dip_hour_utc,
+        dip_hour_brl=dip_hour_brl,
+        daily_spend_brl=daily_spend_brl,
         daily_logs=daily_logs,
         auto_sell_quotas=auto_sell_quotas,
         auto_sell_logs=auto_sell_logs,
