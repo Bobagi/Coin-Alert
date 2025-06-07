@@ -2,11 +2,31 @@
 <html>
   <head>
     <title>Dashboard</title>
+    <style>
+      body {
+        background-color: #000;
+        color: #FFD700;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+      }
+      h1, h2, h3 {
+        color: #FFD700;
+      }
+      pre {
+        background-color: #111;
+        border: 1px solid #FFD700;
+        padding: 10px;
+        overflow-x: auto;
+      }
+      ul { list-style-type: none; padding: 0; }
+      li { padding: 4px 0; }
+    </style>
   </head>
   <body>
     <h1>Coin-Alert Dashboard</h1>
 
-    <h2>Cripto Thresholds</h2>
+    <h2>Crypto Thresholds</h2>
     <ul>
       {% for t in thresholds %}
       <li>
@@ -16,7 +36,29 @@
       {% endfor %}
     </ul>
 
-    <h2>Most recente logs</h2>
+    <h2>Daily Buy</h2>
+    <p>
+      Daily purchases occur at {{ dip_hour_utc }}:00 UTC
+      ({{ dip_hour_brl }}:00 BRT) with each buy spending R${{ daily_spend_brl }}.
+    </p>
+    <ul>
+      {% for c in daily_configs %}
+      <li>{{ c.email }} - {{ c.symbol }} - R${{ c.amount_brl }}</li>
+      {% endfor %}
+    </ul>
+    <h3>Daily Buy Logs</h3>
+    <pre>{{ daily_logs }}</pre>
+
+    <h2>Auto Sell</h2>
+    <ul>
+      {% for q in auto_sell_quotas %}
+      <li>{{ q.email }} - {{ q.symbol }} - Limit {{ q.limit }} BRL - Used {{ q.used }} BRL</li>
+      {% endfor %}
+    </ul>
+    <h3>Auto Sell Logs</h3>
+    <pre>{{ auto_sell_logs }}</pre>
+
+    <h2>Most Recent Email Logs</h2>
     <pre>{{ logs }}</pre>
   </body>
 </html>
