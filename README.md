@@ -153,7 +153,7 @@ Se quiser apagar o banco e tudo que foi gerado:
 
 ```bash
 docker compose down -v
-docker compose up --build
+docker compose up --build -d
 ```
 Isso reinicia a base e recria o banco do zero.
 ' >> README.md
