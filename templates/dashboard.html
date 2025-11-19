@@ -19,6 +19,15 @@
         padding: 10px;
         overflow-x: auto;
       }
+      section {
+        margin-bottom: 30px;
+      }
+      .panel {
+        background-color: #111;
+        border: 1px solid #FFD700;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
       ul { list-style-type: none; padding: 0; }
       li { padding: 4px 0; }
     </style>
@@ -26,39 +35,176 @@
   <body>
     <h1>Coin-Alert Dashboard</h1>
 
-    <h2>Crypto Thresholds</h2>
-    <ul>
-      {% for t in thresholds %}
-      <li>
-        {{ t.email }} - {{ t.symbol }} - {{ t.threshold }} - {{ '>' if
-        t.greaterThanCurrent else '<' }}
-      </li>
-      {% endfor %}
-    </ul>
+    <section>
+      <h2>Crypto Thresholds</h2>
+      <ul id="threshold-list"></ul>
+    </section>
 
-    <h2>Daily Buy</h2>
-    <p>
-      Daily purchases occur at {{ dip_hour_utc }}:00 UTC
-      ({{ dip_hour_brl }}:00 BRT) with each buy spending R${{ daily_spend_brl }}.
-    </p>
-    <ul>
-      {% for c in daily_configs %}
-      <li>{{ c.email }} - {{ c.symbol }} - R${{ c.amount_brl }}</li>
-      {% endfor %}
-    </ul>
-    <h3>Daily Buy Logs</h3>
-    <pre>{{ daily_logs }}</pre>
+    <section>
+      <h2>Daily Buy</h2>
+      <p id="daily-summary"></p>
+      <ul id="daily-config-list"></ul>
+      <h3>Daily Buy Logs</h3>
+      <pre id="daily-logs"></pre>
+    </section>
 
-    <h2>Auto Sell</h2>
-    <ul>
-      {% for q in auto_sell_quotas %}
-      <li>{{ q.email }} - {{ q.symbol }} - Limit {{ q.limit }} BRL - Used {{ q.used }} BRL</li>
-      {% endfor %}
-    </ul>
-    <h3>Auto Sell Logs</h3>
-    <pre>{{ auto_sell_logs }}</pre>
+    <section>
+      <h2>Auto Buy Overview</h2>
+      <div id="auto-buy-quotas"></div>
+      <h3>Auto Buy Logs</h3>
+      <pre id="auto-buy-logs"></pre>
+    </section>
 
-    <h2>Most Recent Email Logs</h2>
-    <pre>{{ logs }}</pre>
+    <section>
+      <h2>Auto Sell</h2>
+      <div id="auto-sell-quotas"></div>
+      <h3>Auto Sell Logs</h3>
+      <pre id="auto-sell-logs"></pre>
+    </section>
+
+    <section>
+      <h2>Most Recent Email Logs</h2>
+      <pre id="email-logs"></pre>
+    </section>
+
+    <script>
+      const dashboardState = {
+        refreshIntervalMs: 5000,
+        endpoints: {
+          data: "{{ url_for('dashboard.dashboard_data') }}",
+        },
+        elements: {
+          thresholds: document.getElementById('threshold-list'),
+          dailySummary: document.getElementById('daily-summary'),
+          dailyConfigs: document.getElementById('daily-config-list'),
+          dailyLogs: document.getElementById('daily-logs'),
+          autoBuyQuotas: document.getElementById('auto-buy-quotas'),
+          autoBuyLogs: document.getElementById('auto-buy-logs'),
+          autoSellQuotas: document.getElementById('auto-sell-quotas'),
+          autoSellLogs: document.getElementById('auto-sell-logs'),
+          emailLogs: document.getElementById('email-logs'),
+        },
+      };
+
+      const initialData = {{ dashboard_data | tojson }};
+
+      function formatCurrency(value) {
+        return `R$${Number(value || 0).toFixed(2)}`;
+      }
+
+      function formatDate(value) {
+        if (!value) {
+          return '—';
+        }
+        const date = new Date(value);
+        return date.toLocaleString();
+      }
+
+      function renderThresholds(thresholds) {
+        const listItems = thresholds.map((threshold) => {
+          const direction = threshold.greaterThanCurrent ? '>' : '<';
+          return `<li>${threshold.email} - ${threshold.symbol} - ${threshold.threshold} - ${direction}</li>`;
+        });
+        dashboardState.elements.thresholds.innerHTML = listItems.join('') || '<li>No thresholds registered.</li>';
+      }
+
+      function renderDaily(daily) {
+        const { dailySummary, dailyConfigs, dailyLogs } = dashboardState.elements;
+        dailySummary.textContent = `Daily purchases occur at ${daily.dipHourUtc}:00 UTC (${daily.dipHourBrl}:00 BRT) with each buy spending ${formatCurrency(daily.dailySpendBrl)}.`;
+
+        const configItems = daily.configs.map((config) => {
+          return `<li>${config.email} - ${config.symbol} - ${formatCurrency(config.amountBrl)}</li>`;
+        });
+        dailyConfigs.innerHTML = configItems.join('') || '<li>No daily buys configured.</li>';
+        dailyLogs.textContent = daily.logs || '';
+      }
+
+      function renderAutoBuy(autoBuy) {
+        const { autoBuyQuotas, autoBuyLogs } = dashboardState.elements;
+        autoBuyLogs.textContent = autoBuy.logs || '';
+        if (!autoBuy.quotas.length) {
+          autoBuyQuotas.innerHTML = '<p>No auto buy quotas configured.</p>';
+          return;
+        }
+
+        const quotaCards = autoBuy.quotas.map((quota) => {
+          const lastBuy = quota.lastBuy
+            ? `${formatDate(quota.lastBuy.eventDate)} — ${quota.lastBuy.status} — ${formatCurrency(quota.lastBuy.quoteQty)}`
+            : 'No buys yet';
+          const lastSell = quota.lastSell
+            ? `${formatDate(quota.lastSell.eventDate)} — ${quota.lastSell.status} — ${formatCurrency(quota.lastSell.quoteQty)}`
+            : 'No sells yet';
+          const releaseAt = quota.lastReleaseAt ? formatDate(quota.lastReleaseAt) : '—';
+
+          return `
+            <div class="panel">
+              <strong>${quota.email}</strong> — ${quota.symbol}<br />
+              Quota: ${formatCurrency(quota.quotaLimitBrl)} | Used: ${formatCurrency(quota.quotaUsedBrl)} | Remaining: ${formatCurrency(quota.quotaRemainingBrl)}<br />
+              Locked: ${formatCurrency(quota.lockedExposure)} | Open Positions: ${quota.openPositions}<br />
+              Last Buy: ${lastBuy}<br />
+              Last Sell: ${lastSell}<br />
+              Last Release: ${releaseAt}
+            </div>
+          `;
+        });
+        autoBuyQuotas.innerHTML = quotaCards.join('');
+      }
+
+      function renderAutoSell(autoSell) {
+        const { autoSellQuotas, autoSellLogs } = dashboardState.elements;
+        autoSellLogs.textContent = autoSell.logs || '';
+        if (!autoSell.quotas.length) {
+          autoSellQuotas.innerHTML = '<p>No auto sell quotas configured.</p>';
+          return;
+        }
+
+        const quotaCards = autoSell.quotas.map((quota) => {
+          return `
+            <div class="panel">
+              <strong>${quota.email}</strong> — ${quota.symbol}<br />
+              Limit: ${formatCurrency(quota.limit)} | Used: ${formatCurrency(quota.used)}
+            </div>
+          `;
+        });
+        autoSellQuotas.innerHTML = quotaCards.join('');
+      }
+
+      function renderLogs(logs) {
+        dashboardState.elements.emailLogs.textContent = logs.emails || '';
+        if (dashboardState.elements.dailyLogs.textContent !== undefined && logs.daily) {
+          dashboardState.elements.dailyLogs.textContent = logs.daily;
+        }
+        if (dashboardState.elements.autoSellLogs.textContent !== undefined && logs.autoSell) {
+          dashboardState.elements.autoSellLogs.textContent = logs.autoSell;
+        }
+        if (dashboardState.elements.autoBuyLogs.textContent !== undefined && logs.autoBuy) {
+          dashboardState.elements.autoBuyLogs.textContent = logs.autoBuy;
+        }
+      }
+
+      function applyDashboardData(data) {
+        renderThresholds(data.thresholds || []);
+        renderDaily({ ...data.daily, logs: data.logs?.daily });
+        renderAutoBuy({ quotas: data.autoBuy?.quotas || [], logs: data.logs?.autoBuy });
+        renderAutoSell({ quotas: data.autoSell?.quotas || [], logs: data.logs?.autoSell });
+        renderLogs(data.logs || {});
+      }
+
+      async function fetchDashboardData() {
+        try {
+          const response = await fetch(dashboardState.endpoints.data);
+          if (!response.ok) {
+            throw new Error('Failed to load dashboard data');
+          }
+          const payload = await response.json();
+          applyDashboardData(payload);
+        } catch (error) {
+          console.error('Dashboard refresh failed', error);
+        }
+      }
+
+      applyDashboardData(initialData);
+      setInterval(fetchDashboardData, dashboardState.refreshIntervalMs);
+    </script>
   </body>
 </html>
