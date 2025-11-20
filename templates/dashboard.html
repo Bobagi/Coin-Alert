@@ -328,11 +328,24 @@
       };
 
       const initialData = {{ dashboard_data | tojson }};
+      const dashboardBasePath = "{{ url_for('dashboard.dashboard') }}";
+
+      function stripDashboardBasePath(targetPath) {
+        if (!dashboardBasePath) {
+          return targetPath;
+        }
+        if (!targetPath.startsWith(dashboardBasePath)) {
+          return targetPath;
+        }
+        const strippedPath = targetPath.slice(dashboardBasePath.length) || '/';
+        return strippedPath.startsWith('/') ? strippedPath : `/${strippedPath}`;
+      }
 
       function buildEndpoint(path) {
         const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+        const pathWithoutBase = stripDashboardBasePath(normalizedPath);
         const normalizedPrefix = dashboardState.apiPrefix || '';
-        return `${normalizedPrefix}${normalizedPath}`;
+        return `${normalizedPrefix}${pathWithoutBase}`;
       }
 
       dashboardState.endpoints = {
