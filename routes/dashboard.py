@@ -1,6 +1,6 @@
 import os
 from decimal import Decimal
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, jsonify, render_template, request
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import joinedload, sessionmaker
 from models import (
@@ -9,6 +9,7 @@ from models import (
     CriptoThreshold,
     DailyPurchaseConfig,
     Trades,
+    UserCredentials,
 )
 
 DB_HOST = os.getenv("DB_HOST")
@@ -32,6 +33,24 @@ def tail_log(path, lines=50):
         with open(path, "r") as file_pointer:
             return "\n".join(file_pointer.readlines()[-lines:])
     return "Log file not found."
+
+
+def find_user_by_email(session, email):
+    return session.query(UserCredentials).filter(UserCredentials.email == email).first()
+
+
+def ensure_user_exists(session, email):
+    user = find_user_by_email(session, email)
+    if not user:
+        raise ValueError(f"Usuário com email {email} não encontrado")
+    return user
+
+
+def parse_decimal_value(value, field_name):
+    try:
+        return Decimal(str(value))
+    except Exception as error:  # noqa: BLE001
+        raise ValueError(f"Valor inválido para {field_name}") from error
 
 
 def build_thresholds(session):
@@ -227,3 +246,111 @@ def dashboard_data():
         db_session.close()
 
     return jsonify(dashboard_data)
+
+
+def handle_configuration_action(action_function):
+    database_session = create_database_session()
+    try:
+        result = action_function(database_session)
+        database_session.commit()
+        return jsonify({"status": "success", **result})
+    except ValueError as validation_error:
+        database_session.rollback()
+        return jsonify({"status": "error", "message": str(validation_error)}), 400
+    finally:
+        database_session.close()
+
+
+def validate_request_fields(payload, required_fields):
+    missing_fields = [field for field in required_fields if field not in payload or payload[field] in (None, "")]
+    if missing_fields:
+        raise ValueError(f"Campos obrigatórios ausentes: {', '.join(missing_fields)}")
+
+
+@dashboard_bp.route('/dashboard/config/auto-buy', methods=['POST'])
+def create_or_update_auto_buy_quota():
+    return handle_configuration_action(_process_auto_buy_payload)
+
+
+def _process_auto_buy_payload(database_session):
+    payload = request.get_json(silent=True) or {}
+    validate_request_fields(payload, ["email", "symbol", "quotaLimitBrl"])
+
+    user = ensure_user_exists(database_session, payload["email"])
+    quota_limit_value = parse_decimal_value(payload["quotaLimitBrl"], "quotaLimitBrl")
+
+    quota = (
+        database_session.query(AutoBuyQuota)
+        .filter(AutoBuyQuota.user_id == user.id, AutoBuyQuota.crypto_symbol == payload["symbol"])
+        .first()
+    )
+
+    if quota:
+        quota.quota_limit_brl = quota_limit_value
+    else:
+        quota = AutoBuyQuota(
+            user_id=user.id,
+            crypto_symbol=payload["symbol"],
+            quota_limit_brl=quota_limit_value,
+            quota_used_brl=Decimal("0"),
+        )
+        database_session.add(quota)
+    database_session.flush()
+
+    return {"message": "Auto buy atualizado com sucesso", "quotaId": quota.id}
+
+
+@dashboard_bp.route('/dashboard/config/auto-sell', methods=['POST'])
+def create_or_update_auto_sell_quota():
+    return handle_configuration_action(_process_auto_sell_payload)
+
+
+def _process_auto_sell_payload(database_session):
+    payload = request.get_json(silent=True) or {}
+    validate_request_fields(payload, ["email", "symbol", "sellLimitBrl"])
+
+    user = ensure_user_exists(database_session, payload["email"])
+    sell_limit_value = parse_decimal_value(payload["sellLimitBrl"], "sellLimitBrl")
+
+    quota = (
+        database_session.query(AutoBuyQuota)
+        .filter(AutoBuyQuota.user_id == user.id, AutoBuyQuota.crypto_symbol == payload["symbol"])
+        .first()
+    )
+
+    if quota:
+        quota.quota_limit_brl = sell_limit_value
+    else:
+        quota = AutoBuyQuota(
+            user_id=user.id,
+            crypto_symbol=payload["symbol"],
+            quota_limit_brl=sell_limit_value,
+            quota_used_brl=Decimal("0"),
+        )
+        database_session.add(quota)
+    database_session.flush()
+
+    return {"message": "Auto sell configurado com sucesso", "quotaId": quota.id}
+
+
+@dashboard_bp.route('/dashboard/config/daily-buy', methods=['POST'])
+def create_daily_buy_config():
+    return handle_configuration_action(_process_daily_buy_payload)
+
+
+def _process_daily_buy_payload(database_session):
+    payload = request.get_json(silent=True) or {}
+    validate_request_fields(payload, ["email", "symbol", "amountBrl"])
+
+    user = ensure_user_exists(database_session, payload["email"])
+    amount_value = parse_decimal_value(payload["amountBrl"], "amountBrl")
+
+    daily_config = DailyPurchaseConfig(
+        user_id=user.id,
+        crypto_symbol=payload["symbol"],
+        amount_brl=amount_value,
+    )
+    database_session.add(daily_config)
+    database_session.flush()
+
+    return {"message": "Compra diária registrada", "configId": daily_config.id}
