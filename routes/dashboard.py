@@ -25,6 +25,15 @@ DB_PORT = os.getenv("DB_PORT", 5432)
 dashboard_bp = Blueprint("dashboard", __name__)
 
 
+def resolve_api_prefix():
+    public_prefix = os.getenv("PUBLIC_API_PREFIX", "").strip()
+    if not public_prefix:
+        return ""
+    if not public_prefix.startswith("/"):
+        public_prefix = f"/{public_prefix}"
+    return public_prefix.rstrip("/")
+
+
 def create_database_session():
     database_url = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     engine = create_engine(database_url)
@@ -52,18 +61,26 @@ def ensure_user_exists(session, email):
 
 def parse_decimal_value(value, field_name):
     try:
-        return Decimal(str(value))
+        parsed_value = Decimal(str(value))
+        if parsed_value <= 0:
+            raise ValueError(f"{field_name} deve ser maior que zero")
+        return parsed_value
     except Exception as error:  # noqa: BLE001
         raise ValueError(f"Valor inválido para {field_name}") from error
 
 
 def ensure_symbol_exists(session, symbol):
-    symbol_exists = session.query(CriptoCurrency).filter(CriptoCurrency.symbol == symbol).first()
+    normalized_symbol = (symbol or "").upper()
+    symbol_exists = session.query(CriptoCurrency).filter(CriptoCurrency.symbol == normalized_symbol).first()
     if not symbol_exists:
         raise ValueError(
             "Símbolo não encontrado. Cadastre o token na seção de alertas ou escolha um símbolo já existente."
         )
     return symbol_exists
+
+
+def normalize_symbol_value(symbol):
+    return (symbol or "").upper().strip()
 
 
 def build_symbol_options(session):
@@ -85,8 +102,8 @@ def compute_minimum_daily_amount_brl():
     conversion_price = fetch_usdt_price_brl()
     if conversion_price is None:
         fallback_brl = os.getenv("DAILY_SPEND_BRL", "10")
-        return float(Decimal(fallback_brl))
-    return float(minimum_usdt * conversion_price)
+        return float(Decimal(fallback_brl).quantize(Decimal("0.01")))
+    return float((minimum_usdt * conversion_price).quantize(Decimal("0.01")))
 
 
 def build_thresholds(session):
@@ -265,15 +282,25 @@ def build_dashboard_payload(session):
     }
 
 
+def build_dashboard_template_context(session):
+    api_prefix = resolve_api_prefix()
+    payload = build_dashboard_payload(session)
+    payload_with_prefix = {"apiPrefix": api_prefix, **payload}
+    return {
+        "dashboard_data": payload_with_prefix,
+        "api_prefix": api_prefix,
+    }
+
+
 @dashboard_bp.route('/dashboard')
 def dashboard():
     db_session = create_database_session()
     try:
-        dashboard_data = build_dashboard_payload(db_session)
+        template_context = build_dashboard_template_context(db_session)
     finally:
         db_session.close()
 
-    return render_template("dashboard.html", dashboard_data=dashboard_data)
+    return render_template("dashboard.html", **template_context)
 
 
 @dashboard_bp.route('/dashboard/data')
@@ -284,7 +311,7 @@ def dashboard_data():
     finally:
         db_session.close()
 
-    return jsonify(dashboard_data)
+    return jsonify({"apiPrefix": resolve_api_prefix(), **dashboard_data})
 
 
 @dashboard_bp.route('/dashboard/crypto-symbols')
@@ -308,7 +335,8 @@ def handle_configuration_action(action_function):
         return jsonify({"status": "error", "message": str(validation_error)}), 400
     except Exception as unexpected_error:  # noqa: BLE001
         database_session.rollback()
-        return jsonify({"status": "error", "message": "Erro inesperado ao processar a configuração."}), 500
+        error_message = str(unexpected_error) or "Erro inesperado ao processar a configuração."
+        return jsonify({"status": "error", "message": error_message}), 500
     finally:
         database_session.close()
 
@@ -329,12 +357,13 @@ def _process_auto_buy_payload(database_session):
     validate_request_fields(payload, ["email", "symbol", "quotaLimitBrl"])
 
     user = ensure_user_exists(database_session, payload["email"])
-    ensure_symbol_exists(database_session, payload["symbol"])
+    normalized_symbol = normalize_symbol_value(payload["symbol"])
+    ensure_symbol_exists(database_session, normalized_symbol)
     quota_limit_value = parse_decimal_value(payload["quotaLimitBrl"], "quotaLimitBrl")
 
     quota = (
         database_session.query(AutoBuyQuota)
-        .filter(AutoBuyQuota.user_id == user.id, AutoBuyQuota.crypto_symbol == payload["symbol"])
+        .filter(AutoBuyQuota.user_id == user.id, AutoBuyQuota.crypto_symbol == normalized_symbol)
         .first()
     )
 
@@ -343,7 +372,7 @@ def _process_auto_buy_payload(database_session):
     else:
         quota = AutoBuyQuota(
             user_id=user.id,
-            crypto_symbol=payload["symbol"],
+            crypto_symbol=normalized_symbol,
             quota_limit_brl=quota_limit_value,
             quota_used_brl=Decimal("0"),
         )
@@ -363,12 +392,13 @@ def _process_auto_sell_payload(database_session):
     validate_request_fields(payload, ["email", "symbol", "sellLimitBrl"])
 
     user = ensure_user_exists(database_session, payload["email"])
-    ensure_symbol_exists(database_session, payload["symbol"])
+    normalized_symbol = normalize_symbol_value(payload["symbol"])
+    ensure_symbol_exists(database_session, normalized_symbol)
     sell_limit_value = parse_decimal_value(payload["sellLimitBrl"], "sellLimitBrl")
 
     quota = (
         database_session.query(AutoBuyQuota)
-        .filter(AutoBuyQuota.user_id == user.id, AutoBuyQuota.crypto_symbol == payload["symbol"])
+        .filter(AutoBuyQuota.user_id == user.id, AutoBuyQuota.crypto_symbol == normalized_symbol)
         .first()
     )
 
@@ -377,7 +407,7 @@ def _process_auto_sell_payload(database_session):
     else:
         quota = AutoBuyQuota(
             user_id=user.id,
-            crypto_symbol=payload["symbol"],
+            crypto_symbol=normalized_symbol,
             quota_limit_brl=sell_limit_value,
             quota_used_brl=Decimal("0"),
         )
@@ -397,12 +427,18 @@ def _process_daily_buy_payload(database_session):
     validate_request_fields(payload, ["email", "symbol", "amountBrl"])
 
     user = ensure_user_exists(database_session, payload["email"])
-    ensure_symbol_exists(database_session, payload["symbol"])
+    normalized_symbol = normalize_symbol_value(payload["symbol"])
+    ensure_symbol_exists(database_session, normalized_symbol)
     amount_value = parse_decimal_value(payload["amountBrl"], "amountBrl")
+    minimum_order_value = Decimal(str(compute_minimum_daily_amount_brl()))
+    if amount_value < minimum_order_value:
+        raise ValueError(
+            f"Valor por compra deve ser pelo menos {minimum_order_value} BRL para atender o piso da Binance"
+        )
 
     daily_config = DailyPurchaseConfig(
         user_id=user.id,
-        crypto_symbol=payload["symbol"],
+        crypto_symbol=normalized_symbol,
         amount_brl=amount_value,
     )
     database_session.add(daily_config)

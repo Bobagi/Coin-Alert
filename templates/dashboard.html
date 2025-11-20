@@ -305,13 +305,8 @@
     <script>
       const dashboardState = {
         refreshIntervalMs: 5000,
-        endpoints: {
-          data: "{{ url_for('dashboard.dashboard_data') }}",
-          autoBuyConfig: "{{ url_for('dashboard.create_or_update_auto_buy_quota') }}",
-          autoSellConfig: "{{ url_for('dashboard.create_or_update_auto_sell_quota') }}",
-          dailyBuyConfig: "{{ url_for('dashboard.create_daily_buy_config') }}",
-          symbols: "{{ url_for('dashboard.crypto_symbols') }}",
-        },
+        apiPrefix: "{{ api_prefix }}",
+        endpoints: {},
         elements: {
           summaryCards: document.getElementById('summary-cards'),
           thresholds: document.getElementById('threshold-list'),
@@ -333,6 +328,20 @@
       };
 
       const initialData = {{ dashboard_data | tojson }};
+
+      function buildEndpoint(path) {
+        const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+        const normalizedPrefix = dashboardState.apiPrefix || '';
+        return `${normalizedPrefix}${normalizedPath}`;
+      }
+
+      dashboardState.endpoints = {
+        data: buildEndpoint("{{ url_for('dashboard.dashboard_data') }}"),
+        autoBuyConfig: buildEndpoint("{{ url_for('dashboard.create_or_update_auto_buy_quota') }}"),
+        autoSellConfig: buildEndpoint("{{ url_for('dashboard.create_or_update_auto_sell_quota') }}"),
+        dailyBuyConfig: buildEndpoint("{{ url_for('dashboard.create_daily_buy_config') }}"),
+        symbols: buildEndpoint("{{ url_for('dashboard.crypto_symbols') }}"),
+      };
 
       function formatCurrency(value) {
         return `R$${Number(value || 0).toFixed(2)}`;
@@ -482,6 +491,9 @@
       }
 
       function applyDashboardData(data) {
+        if (data.apiPrefix && data.apiPrefix !== dashboardState.apiPrefix) {
+          dashboardState.apiPrefix = data.apiPrefix;
+        }
         populateSymbolOptions(data.availableSymbols || []);
         renderSummaryCards(data);
         renderThresholds(data.thresholds || []);
@@ -496,9 +508,12 @@
           dashboardState.elements.refreshIndicator.textContent = 'Atualizando...';
           const response = await fetch(dashboardState.endpoints.data);
           if (!response.ok) {
-            throw new Error('Falha ao carregar dados do dashboard');
+            throw new Error(`Falha ao carregar dados do dashboard (${response.status})`);
           }
           const payload = await response.json();
+          if (payload.apiPrefix && payload.apiPrefix !== dashboardState.apiPrefix) {
+            dashboardState.apiPrefix = payload.apiPrefix;
+          }
           applyDashboardData(payload);
           dashboardState.elements.refreshIndicator.textContent = 'Atualizado a cada 5s';
         } catch (error) {
@@ -554,7 +569,8 @@
             throw new Error('Resposta inválida do servidor. Verifique os dados e tente novamente.');
           }
           if (!response.ok || result.status === 'error') {
-            throw new Error(result.message || 'Erro ao salvar configuração');
+            const detailedMessage = result.message || rawText || 'Erro ao salvar configuração';
+            throw new Error(`${detailedMessage} (HTTP ${response.status})`);
           }
           statusElement.textContent = result.message || 'Configuração salva';
           statusElement.className = 'status success';
