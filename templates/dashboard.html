@@ -220,7 +220,7 @@
           <label for="auto-buy-email">Email</label>
           <input id="auto-buy-email" name="email" type="email" required />
           <label for="auto-buy-symbol">Símbolo</label>
-          <input id="auto-buy-symbol" name="symbol" placeholder="BTCUSDT" required />
+          <input id="auto-buy-symbol" name="symbol" placeholder="BTCUSDT" list="symbol-options" required />
           <label for="auto-buy-limit">Limite (BRL)</label>
           <input id="auto-buy-limit" name="quotaLimitBrl" type="number" step="0.01" required />
           <button class="button" type="submit">Salvar Auto Buy</button>
@@ -232,7 +232,7 @@
           <label for="auto-sell-email">Email</label>
           <input id="auto-sell-email" name="email" type="email" required />
           <label for="auto-sell-symbol">Símbolo</label>
-          <input id="auto-sell-symbol" name="symbol" placeholder="BTCUSDT" required />
+          <input id="auto-sell-symbol" name="symbol" placeholder="BTCUSDT" list="symbol-options" required />
           <label for="auto-sell-limit">Limite (BRL)</label>
           <input id="auto-sell-limit" name="sellLimitBrl" type="number" step="0.01" required />
           <button class="button" type="submit">Salvar Auto Sell</button>
@@ -244,13 +244,14 @@
           <label for="daily-buy-email">Email</label>
           <input id="daily-buy-email" name="email" type="email" required />
           <label for="daily-buy-symbol">Símbolo</label>
-          <input id="daily-buy-symbol" name="symbol" placeholder="ETHUSDT" required />
+          <input id="daily-buy-symbol" name="symbol" placeholder="ETHUSDT" list="symbol-options" required />
           <label for="daily-buy-amount">Valor por compra (BRL)</label>
           <input id="daily-buy-amount" name="amountBrl" type="number" step="0.01" required />
           <button class="button" type="submit">Registrar Daily Buy</button>
           <div class="status" id="daily-buy-status"></div>
         </form>
       </div>
+      <datalist id="symbol-options"></datalist>
     </div>
 
     <div class="section-title">
@@ -309,6 +310,7 @@
           autoBuyConfig: "{{ url_for('dashboard.create_or_update_auto_buy_quota') }}",
           autoSellConfig: "{{ url_for('dashboard.create_or_update_auto_sell_quota') }}",
           dailyBuyConfig: "{{ url_for('dashboard.create_daily_buy_config') }}",
+          symbols: "{{ url_for('dashboard.crypto_symbols') }}",
         },
         elements: {
           summaryCards: document.getElementById('summary-cards'),
@@ -325,7 +327,9 @@
           autoBuyStatus: document.getElementById('auto-buy-status'),
           autoSellStatus: document.getElementById('auto-sell-status'),
           dailyBuyStatus: document.getElementById('daily-buy-status'),
+          symbolDataList: document.getElementById('symbol-options'),
         },
+        availableSymbols: new Set(),
       };
 
       const initialData = {{ dashboard_data | tojson }};
@@ -397,7 +401,10 @@
 
       function renderDaily(daily) {
         const { dailySummary, dailyConfigs, dailyLogs } = dashboardState.elements;
-        dailySummary.textContent = `Daily às ${daily.dipHourUtc}:00 UTC (${daily.dipHourBrl}:00 BRT) — teto diário ${formatCurrency(daily.dailySpendBrl)}.`;
+        const minimumLabel = daily.minimumPerOrderBrl
+          ? `piso por ordem ~${formatCurrency(daily.minimumPerOrderBrl)}`
+          : 'piso por ordem indisponível';
+        dailySummary.textContent = `Daily às ${daily.dipHourUtc}:00 UTC (${daily.dipHourBrl}:00 BRT) — ${minimumLabel}.`;
 
         const configItems = daily.configs.map((config) => {
           return `<div class="stat-row"><span>${config.email} — ${config.symbol}</span><span class="highlight">${formatCurrency(config.amountBrl)}</span></div>`;
@@ -475,6 +482,7 @@
       }
 
       function applyDashboardData(data) {
+        populateSymbolOptions(data.availableSymbols || []);
         renderSummaryCards(data);
         renderThresholds(data.thresholds || []);
         renderDaily({ ...data.daily, logs: data.logs?.daily });
@@ -504,6 +512,30 @@
         return Object.fromEntries(formData.entries());
       }
 
+      function populateSymbolOptions(symbols) {
+        if (!symbols || !symbols.length) {
+          return;
+        }
+        symbols.forEach((symbol) => dashboardState.availableSymbols.add(symbol));
+        const sortedSymbols = Array.from(dashboardState.availableSymbols).sort();
+        dashboardState.elements.symbolDataList.innerHTML = sortedSymbols
+          .map((symbol) => `<option value="${symbol}"></option>`)
+          .join('');
+      }
+
+      async function refreshSymbolOptionsFromServer() {
+        try {
+          const response = await fetch(dashboardState.endpoints.symbols);
+          if (!response.ok) {
+            return;
+          }
+          const payload = await response.json();
+          populateSymbolOptions(payload.symbols || []);
+        } catch (error) {
+          console.warn('Não foi possível atualizar símbolos', error);
+        }
+      }
+
       async function submitConfiguration(formElement, endpoint, statusElement) {
         const payload = buildPayloadFromForm(formElement);
         statusElement.textContent = 'Enviando...';
@@ -514,7 +546,13 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          const result = await response.json();
+          const rawText = await response.text();
+          let result;
+          try {
+            result = JSON.parse(rawText);
+          } catch (parseError) {
+            throw new Error('Resposta inválida do servidor. Verifique os dados e tente novamente.');
+          }
           if (!response.ok || result.status === 'error') {
             throw new Error(result.message || 'Erro ao salvar configuração');
           }
@@ -544,6 +582,7 @@
       });
 
       applyDashboardData(initialData);
+      refreshSymbolOptionsFromServer();
       setInterval(fetchDashboardData, dashboardState.refreshIntervalMs);
     </script>
   </body>
