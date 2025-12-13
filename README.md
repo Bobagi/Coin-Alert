@@ -39,6 +39,16 @@ EMAIL_SMTP_PORT=587
 
 O serviço `app` só inicia após o Postgres estar saudável. O schema é criado automaticamente na inicialização.
 
+### Ajustando usuário e senha do banco após já ter dados
+Se você alterar `DB_USER` ou `DB_PASSWORD` em um ambiente que já possui o volume `db_data` inicializado, o Postgres continuará usando as credenciais originais gravadas no volume. Para aplicar novas credenciais, remova o volume antes de subir novamente os containers:
+
+```
+docker compose down -v
+docker compose up --build
+```
+
+Alternativamente, mantenha as mesmas credenciais usadas na primeira inicialização do banco.
+
 ## Estrutura de pastas
 - `cmd/server`: ponto de entrada da aplicação.
 - `internal/config`: carregamento de configuração via ambiente.
