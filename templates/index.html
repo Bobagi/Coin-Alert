@@ -35,6 +35,10 @@
         .dropdown-list { position: absolute; top: 100%; left: 0; right: 0; background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; max-height: 220px; overflow-y: auto; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
         .dropdown-item { padding: 10px 12px; cursor: pointer; }
         .dropdown-item:hover { background: #111827; }
+        .dropdown-item.active { background: rgba(99,102,241,0.2); }
+        .loading-indicator { display: inline-flex; align-items: center; gap: 8px; color: #94a3b8; font-size: 0.9em; }
+        .loading-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
     </style>
 </head>
 <body x-data="dashboard()" x-init="initDashboard()">
@@ -77,10 +81,10 @@
             <form action="/transactions/buy" method="post">
                 <label for="asset_symbol_buy">Ativo</label>
                 <div class="dropdown" x-data="symbolDropdown('asset_symbol_buy')">
-                    <input id="asset_symbol_buy" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" placeholder="Ex: BTCUSDT" autocomplete="off" required>
+                    <input id="asset_symbol_buy" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="Ex: BTCUSDT" autocomplete="off" required>
                     <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
-                        <template x-for="symbol in filteredSymbols" :key="symbol">
-                            <div class="dropdown-item" x-text="symbol" x-on:click="select(symbol)"></div>
+                        <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
+                            <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
                 </div>
@@ -98,10 +102,10 @@
             <form action="/transactions/sell" method="post">
                 <label for="asset_symbol_sell">Ativo</label>
                 <div class="dropdown" x-data="symbolDropdown('asset_symbol_sell')">
-                    <input id="asset_symbol_sell" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" placeholder="Ex: ETHUSDT" autocomplete="off" required>
+                    <input id="asset_symbol_sell" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="Ex: ETHUSDT" autocomplete="off" required>
                     <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
-                        <template x-for="symbol in filteredSymbols" :key="symbol">
-                            <div class="dropdown-item" x-text="symbol" x-on:click="select(symbol)"></div>
+                        <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
+                            <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
                 </div>
@@ -130,16 +134,30 @@
     <div class="card" style="margin-top: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <h2>Operações recentes</h2>
-            <a class="link-button" x-on:click.prevent="refreshTransactions()">Recarregar</a>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div class="loading-indicator" x-show="isRefreshingTransactions" x-transition>
+                    <span class="loading-dot"></span>
+                    <span>Atualizando...</span>
+                </div>
+                <button type="button" class="link-button" style="border:none; background:none; padding:0;" x-bind:disabled="isRefreshingTransactions" x-on:click.prevent="refreshTransactions()">
+                    <span x-show="!isRefreshingTransactions">Recarregar</span>
+                    <span x-show="isRefreshingTransactions">Aguarde...</span>
+                </button>
+            </div>
         </div>
         <div class="transactions" id="transactions-list">
             {{template "partials/transactions.html" .Transactions}}
         </div>
+        <p class="muted" x-show="lastTransactionsRefreshMessage" x-text="lastTransactionsRefreshMessage" style="margin-top:8px;"></p>
+        <p class="muted" x-show="transactionsRefreshError" x-text="transactionsRefreshError" style="margin-top:8px; color:#ef4444;"></p>
     </div>
 </div>
 <script>
     function dashboard() {
         return {
+            isRefreshingTransactions: false,
+            lastTransactionsRefreshMessage: '',
+            transactionsRefreshError: '',
             initDashboard() {
                 Alpine.store('symbolStore', { symbols: [] });
                 this.loadSymbols();
@@ -155,13 +173,23 @@
                 }
             },
             async refreshTransactions() {
+                this.isRefreshingTransactions = true;
+                this.transactionsRefreshError = '';
                 try {
                     const response = await fetch('/transactions');
-                    if (!response.ok) return;
+                    if (!response.ok) {
+                        this.transactionsRefreshError = 'Não foi possível atualizar as operações agora.';
+                        return;
+                    }
                     const html = await response.text();
                     document.getElementById('transactions-list').innerHTML = html;
+                    const now = new Date();
+                    this.lastTransactionsRefreshMessage = `Atualizado às ${now.toLocaleTimeString('pt-BR')}`;
                 } catch (error) {
+                    this.transactionsRefreshError = 'Falha ao recarregar transações.';
                     console.error('Erro ao recarregar transações', error);
+                } finally {
+                    this.isRefreshingTransactions = false;
                 }
             },
         };
@@ -171,20 +199,42 @@
         return {
             query: '',
             filteredSymbols: [],
+            highlightedIndex: -1,
             filter() {
                 const search = this.query.toUpperCase();
                 const availableSymbols = Alpine.store('symbolStore').symbols || [];
                 if (!search) {
                     this.filteredSymbols = availableSymbols.slice(0, 20);
+                    this.highlightedIndex = this.filteredSymbols.length ? 0 : -1;
                     return;
                 }
                 this.filteredSymbols = availableSymbols
                     .filter(symbol => symbol.includes(search))
                     .slice(0, 20);
+                this.highlightedIndex = this.filteredSymbols.length ? 0 : -1;
             },
             select(symbol) {
                 this.query = symbol;
                 this.filteredSymbols = [];
+                this.highlightedIndex = -1;
+            },
+            highlightNext() {
+                if (!this.filteredSymbols.length) {
+                    return;
+                }
+                this.highlightedIndex = (this.highlightedIndex + 1) % this.filteredSymbols.length;
+            },
+            highlightPrevious() {
+                if (!this.filteredSymbols.length) {
+                    return;
+                }
+                this.highlightedIndex = (this.highlightedIndex - 1 + this.filteredSymbols.length) % this.filteredSymbols.length;
+            },
+            selectHighlighted() {
+                if (this.highlightedIndex < 0 || this.highlightedIndex >= this.filteredSymbols.length) {
+                    return;
+                }
+                this.select(this.filteredSymbols[this.highlightedIndex]);
             }
         };
     }

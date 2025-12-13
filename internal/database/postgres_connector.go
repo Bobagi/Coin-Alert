@@ -1,44 +1,44 @@
 package database
 
 import (
-    "context"
-    "database/sql"
-    "log"
-    "time"
+	"context"
+	"database/sql"
+	"log"
+	"time"
 
-    _ "github.com/lib/pq"
+	_ "github.com/lib/pq"
 )
 
 type PostgresConnector struct {
-    Database *sql.DB
+	Database *sql.DB
 }
 
 func InitializePostgresConnector(databaseURL string) (*PostgresConnector, error) {
-    databaseConnection, connectionError := sql.Open("postgres", databaseURL)
-    if connectionError != nil {
-        return nil, connectionError
-    }
+	databaseConnection, connectionError := sql.Open("postgres", databaseURL)
+	if connectionError != nil {
+		return nil, connectionError
+	}
 
-    pingContext, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer pingCancel()
+	pingContext, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
 
-    pingError := databaseConnection.PingContext(pingContext)
-    if pingError != nil {
-        return nil, pingError
-    }
+	pingError := databaseConnection.PingContext(pingContext)
+	if pingError != nil {
+		return nil, pingError
+	}
 
-    connector := &PostgresConnector{Database: databaseConnection}
-    migrationError := connector.ensureSchema()
-    if migrationError != nil {
-        return nil, migrationError
-    }
+	connector := &PostgresConnector{Database: databaseConnection}
+	migrationError := connector.ensureSchema()
+	if migrationError != nil {
+		return nil, migrationError
+	}
 
-    log.Println("Connected to PostgreSQL and ensured schema")
-    return connector, nil
+	log.Println("Connected to PostgreSQL and ensured schema")
+	return connector, nil
 }
 
 func (connector *PostgresConnector) ensureSchema() error {
-    schemaCreationSQL := `
+	schemaCreationSQL := `
 CREATE TABLE IF NOT EXISTS transactions (
     id SERIAL PRIMARY KEY,
     operation_type VARCHAR(10) NOT NULL,
@@ -56,12 +56,19 @@ CREATE TABLE IF NOT EXISTS email_alerts (
     message_body TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS binance_credentials (
+    id SERIAL PRIMARY KEY,
+    api_key TEXT NOT NULL,
+    api_secret TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 `
 
-    _, executionError := connector.Database.Exec(schemaCreationSQL)
-    return executionError
+	_, executionError := connector.Database.Exec(schemaCreationSQL)
+	return executionError
 }
 
 func (connector *PostgresConnector) Close() error {
-    return connector.Database.Close()
+	return connector.Database.Close()
 }
