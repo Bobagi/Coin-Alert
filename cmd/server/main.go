@@ -51,6 +51,7 @@ func main() {
 
     go func() {
         log.Printf("Server running on %s", serverAddress)
+        log.Printf("Dashboard available at http://localhost:%s", applicationConfiguration.ServerPort)
         startError := httpServer.ListenAndServe()
         if startError != nil && startError != http.ErrServerClosed {
             log.Fatalf("Server error: %v", startError)
