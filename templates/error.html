@@ -1,10 +1,10 @@
 {{define "error.html"}}
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coin Alert • Erro</title>
+    <title>Coin Alert • Error</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; display:flex; align-items:center; justify-content:center; min-height:100vh; }
@@ -16,15 +16,15 @@
 </head>
 <body>
     <div class="card">
-        <h1>Configuração necessária</h1>
+        <h1>Action required</h1>
         <p>{{.Message}}</p>
-        <p>Informe a API Key e o Secret Key da sua conta Binance abaixo para liberar o painel.</p>
+        <p>Provide your Binance API Key and Secret Key below to enable the dashboard.</p>
         <form action="/settings/binance" method="post" style="margin-top: 12px; display:grid; gap:10px;">
             <input type="text" name="binance_api_key" placeholder="API Key" required style="padding:10px; border-radius:8px; border:1px solid #1f2937; background:#0b1220; color:#e2e8f0;">
             <input type="password" name="binance_api_secret" placeholder="Secret Key" required style="padding:10px; border-radius:8px; border:1px solid #1f2937; background:#0b1220; color:#e2e8f0;">
-            <button type="submit" class="button" style="text-align:center;">Salvar e voltar</button>
+            <button type="submit" class="button" style="text-align:center;">Save and return</button>
         </form>
-        <a class="button" href="/" style="background:linear-gradient(120deg, #f97316, #ea580c);">Voltar</a>
+        <a class="button" href="/" style="background:linear-gradient(120deg, #f97316, #ea580c);">Back</a>
     </div>
 </body>
 </html>

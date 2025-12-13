@@ -1,10 +1,10 @@
 {{define "index.html"}}
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coin Alert - Painel</title>
+    <title>Coin Alert - Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
@@ -43,105 +43,105 @@
 </head>
 <body x-data="dashboard()" x-init="initDashboard()">
 <header>
-    <h1>Coin Alert • Operações e Alertas</h1>
-    <p>Sistema reescrito em Go com foco em SOLID e automações seguras.</p>
+    <h1>Coin Alert • Trades and Alerts</h1>
+    <p>Rewritten in Go with SOLID boundaries, automation, and safer credentials.</p>
 </header>
 <div class="container">
     <div class="grid">
         <div class="card">
-            <h2>Credenciais Binance</h2>
-            <p class="muted">Aplique a API Key e Secret Key para habilitar as automações.</p>
+            <h2>Binance Credentials</h2>
+            <p class="muted">Apply your API Key and Secret Key to enable automations and trades.</p>
             <form action="/settings/binance" method="post">
                 <label for="binance_api_key">API Key</label>
-                <input id="binance_api_key" name="binance_api_key" type="text" placeholder="Cole sua API Key" required>
+                <input id="binance_api_key" name="binance_api_key" type="text" placeholder="Paste your API Key" required>
                 <label for="binance_api_secret">Secret Key</label>
-                <input id="binance_api_secret" name="binance_api_secret" type="password" placeholder="Cole seu Secret" required>
-                <button type="submit">Salvar credenciais</button>
+                <input id="binance_api_secret" name="binance_api_secret" type="password" placeholder="Paste your Secret Key" required>
+                <button type="submit">Save credentials</button>
             </form>
             <div class="row" style="margin-top: 12px;">
                 <div>
-                    <div class="muted">API Key atual</div>
+                    <div class="muted">Current API Key</div>
                     <div class="pill">{{.BinanceAPIKeyMasked}}</div>
                 </div>
                 <div>
-                    <div class="muted">Secret Key atual</div>
+                    <div class="muted">Current Secret Key</div>
                     <div class="pill">{{.BinanceAPISecretMasked}}</div>
                 </div>
             </div>
             <div style="margin-top: 12px;">
                 {{if .IsBinanceConfigured}}
-                    <div class="status-chip">Credenciais válidas</div>
+                    <div class="status-chip">Credentials validated</div>
                 {{else}}
-                    <div class="status-chip warning">Pendentes</div>
+                    <div class="status-chip warning">Pending validation</div>
                 {{end}}
             </div>
         </div>
         <div class="card">
-            <h2>Registrar Compra</h2>
+            <h2>Log Buy</h2>
             <form action="/transactions/buy" method="post">
-                <label for="asset_symbol_buy">Ativo</label>
+                <label for="asset_symbol_buy">Asset</label>
                 <div class="dropdown" x-data="symbolDropdown('asset_symbol_buy')">
-                    <input id="asset_symbol_buy" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="Ex: BTCUSDT" autocomplete="off" required>
+                    <input id="asset_symbol_buy" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. BTCUSDT" autocomplete="off" required>
                     <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
                         <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
                             <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
                 </div>
-                <label for="quantity_buy">Quantidade</label>
+                <label for="quantity_buy">Quantity</label>
                 <input id="quantity_buy" name="quantity" type="number" step="0.00000001" min="0" required>
-                <label for="price_buy">Preço unitário</label>
+                <label for="price_buy">Unit price</label>
                 <input id="price_buy" name="price_per_unit" type="number" step="0.00000001" min="0" required>
-                <label for="notes_buy">Observações</label>
-                <textarea id="notes_buy" name="notes" rows="2" placeholder="Ex: Compra manual via carteira"></textarea>
-                <button type="submit">Salvar compra</button>
+                <label for="notes_buy">Notes</label>
+                <textarea id="notes_buy" name="notes" rows="2" placeholder="E.g. manual purchase"></textarea>
+                <button type="submit">Save buy</button>
             </form>
         </div>
         <div class="card">
-            <h2>Registrar Venda</h2>
+            <h2>Log Sell</h2>
             <form action="/transactions/sell" method="post">
-                <label for="asset_symbol_sell">Ativo</label>
+                <label for="asset_symbol_sell">Asset</label>
                 <div class="dropdown" x-data="symbolDropdown('asset_symbol_sell')">
-                    <input id="asset_symbol_sell" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="Ex: ETHUSDT" autocomplete="off" required>
+                    <input id="asset_symbol_sell" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. ETHUSDT" autocomplete="off" required>
                     <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
                         <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
                             <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
                 </div>
-                <label for="quantity_sell">Quantidade</label>
+                <label for="quantity_sell">Quantity</label>
                 <input id="quantity_sell" name="quantity" type="number" step="0.00000001" min="0" required>
-                <label for="price_sell">Preço unitário</label>
+                <label for="price_sell">Unit price</label>
                 <input id="price_sell" name="price_per_unit" type="number" step="0.00000001" min="0" required>
-                <label for="notes_sell">Observações</label>
-                <textarea id="notes_sell" name="notes" rows="2" placeholder="Ex: Venda automática programada"></textarea>
-                <button class="secondary" type="submit">Salvar venda</button>
+                <label for="notes_sell">Notes</label>
+                <textarea id="notes_sell" name="notes" rows="2" placeholder="E.g. automated sell"></textarea>
+                <button class="secondary" type="submit">Save sell</button>
             </form>
         </div>
         <div class="card">
-            <h2>Enviar alerta por e-mail</h2>
+            <h2>Send email alert</h2>
             <form action="/alerts/email" method="post">
-                <label for="recipient_address">Destinatário</label>
-                <input id="recipient_address" name="recipient_address" type="email" placeholder="usuario@dominio.com" required>
-                <label for="subject">Assunto</label>
-                <input id="subject" name="subject" placeholder="Ex: Preço atingiu alvo" required>
-                <label for="message_body">Mensagem</label>
-                <textarea id="message_body" name="message_body" rows="3" placeholder="Contextualize o alerta" required></textarea>
-                <button type="submit">Enviar alerta</button>
+                <label for="recipient_address">Recipient</label>
+                <input id="recipient_address" name="recipient_address" type="email" placeholder="user@domain.com" required>
+                <label for="subject">Subject</label>
+                <input id="subject" name="subject" placeholder="E.g. Price reached target" required>
+                <label for="message_body">Message</label>
+                <textarea id="message_body" name="message_body" rows="3" placeholder="Add alert context" required></textarea>
+                <button type="submit">Send alert</button>
             </form>
         </div>
     </div>
     <div class="card" style="margin-top: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h2>Operações recentes</h2>
+            <h2>Recent trades</h2>
             <div style="display:flex; align-items:center; gap:12px;">
                 <div class="loading-indicator" x-show="isRefreshingTransactions" x-transition>
                     <span class="loading-dot"></span>
-                    <span>Atualizando...</span>
+                    <span>Refreshing...</span>
                 </div>
                 <button type="button" class="link-button" style="border:none; background:none; padding:0;" x-bind:disabled="isRefreshingTransactions" x-on:click.prevent="refreshTransactions()">
-                    <span x-show="!isRefreshingTransactions">Recarregar</span>
-                    <span x-show="isRefreshingTransactions">Aguarde...</span>
+                    <span x-show="!isRefreshingTransactions">Reload</span>
+                    <span x-show="isRefreshingTransactions">Please wait...</span>
                 </button>
             </div>
         </div>
@@ -169,7 +169,7 @@
                     const body = await response.json();
                     Alpine.store('symbolStore').symbols = body.symbols || [];
                 } catch (error) {
-                    console.error('Erro ao carregar símbolos da Binance', error);
+                    console.error('Could not load Binance symbols', error);
                 }
             },
             async refreshTransactions() {
@@ -178,16 +178,16 @@
                 try {
                     const response = await fetch('/transactions');
                     if (!response.ok) {
-                        this.transactionsRefreshError = 'Não foi possível atualizar as operações agora.';
+                        this.transactionsRefreshError = 'Unable to refresh trades right now.';
                         return;
                     }
                     const html = await response.text();
                     document.getElementById('transactions-list').innerHTML = html;
                     const now = new Date();
-                    this.lastTransactionsRefreshMessage = `Atualizado às ${now.toLocaleTimeString('pt-BR')}`;
+                    this.lastTransactionsRefreshMessage = `Updated at ${now.toLocaleTimeString('en-US')}`;
                 } catch (error) {
-                    this.transactionsRefreshError = 'Falha ao recarregar transações.';
-                    console.error('Erro ao recarregar transações', error);
+                    this.transactionsRefreshError = 'Failed to reload trades.';
+                    console.error('Could not reload trades', error);
                 } finally {
                     this.isRefreshingTransactions = false;
                 }

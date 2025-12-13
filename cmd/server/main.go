@@ -34,10 +34,10 @@ func main() {
 	transactionService := service.NewTransactionService(transactionRepository)
 	emailAlertService := service.NewEmailAlertService(emailAlertRepository, applicationConfiguration.EmailSenderAddress, applicationConfiguration.EmailSenderPassword, applicationConfiguration.EmailSMTPHost, applicationConfiguration.EmailSMTPPort)
 	automationService := service.NewAutomationService(transactionService, applicationConfiguration.AutomaticSellIntervalMinutes, applicationConfiguration.DailyPurchaseIntervalMinutes)
-	binanceCredentialValidator := service.NewBinanceCredentialValidator(applicationConfiguration.BinanceAPIBaseURL)
-	credentialService := service.NewCredentialService(credentialRepository, binanceCredentialValidator, applicationConfiguration.BinanceAPIKey, applicationConfiguration.BinanceAPISecret)
-	credentialService.InitializeCredentials(context.Background())
-	binanceSymbolService := service.NewBinanceSymbolService()
+        binanceCredentialValidator := service.NewBinanceCredentialValidator(applicationConfiguration.BinanceAPIBaseURL)
+        credentialService := service.NewCredentialService(credentialRepository, binanceCredentialValidator, applicationConfiguration.BinanceAPIKey, applicationConfiguration.BinanceAPISecret)
+        credentialService.InitializeCredentials(context.Background())
+        binanceSymbolService := service.NewBinanceSymbolService(applicationConfiguration.BinanceAPIBaseURL)
 
 	parsedTemplates, templateError := parseHTMLTemplates("templates")
 	if templateError != nil {

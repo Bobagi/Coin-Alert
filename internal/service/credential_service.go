@@ -34,37 +34,37 @@ func (service *CredentialService) InitializeCredentials(initializationContext co
 	repositoryContext, cancel := context.WithTimeout(initializationContext, service.defaultValidationTimeout)
 	defer cancel()
 
-	storedAPIKey, storedAPISecret, loadError := service.credentialRepository.LoadLatestCredentials(repositoryContext)
-	if loadError != nil {
-		log.Printf("Não foi possível carregar credenciais salvas: %v", loadError)
-	}
+        storedAPIKey, storedAPISecret, loadCredentialsError := service.credentialRepository.LoadLatestCredentials(repositoryContext)
+        if loadCredentialsError != nil {
+                log.Printf("Could not load saved credentials: %v", loadCredentialsError)
+        }
 
-	if strings.TrimSpace(storedAPIKey) != "" && strings.TrimSpace(storedAPISecret) != "" {
-		validationError := service.validateAndSet(repositoryContext, storedAPIKey, storedAPISecret)
-		if validationError == nil {
-			return
-		}
-		log.Printf("Credenciais salvas são inválidas: %v", validationError)
-	}
+        if strings.TrimSpace(storedAPIKey) != "" && strings.TrimSpace(storedAPISecret) != "" {
+                validationError := service.validateAndSet(repositoryContext, storedAPIKey, storedAPISecret)
+                if validationError == nil {
+                        return
+                }
+                log.Printf("Saved credentials are invalid: %v", validationError)
+        }
 
 	if strings.TrimSpace(service.BinanceAPIKey) == "" || strings.TrimSpace(service.BinanceAPISecret) == "" {
 		service.credentialsValidated = false
 		return
 	}
 
-	validationError := service.ValidateAndPersistCredentials(initializationContext, service.BinanceAPIKey, service.BinanceAPISecret)
-	if validationError != nil {
-		log.Printf("Credenciais de ambiente inválidas: %v", validationError)
-	}
+        validationError := service.ValidateAndPersistCredentials(initializationContext, service.BinanceAPIKey, service.BinanceAPISecret)
+        if validationError != nil {
+                log.Printf("Environment credentials are invalid: %v", validationError)
+        }
 }
 
 func (service *CredentialService) ValidateAndPersistCredentials(operationContext context.Context, updatedAPIKey string, updatedAPISecret string) error {
 	validationContext, cancel := context.WithTimeout(operationContext, service.defaultValidationTimeout)
 	defer cancel()
 
-	if service.credentialValidator == nil {
-		return errors.New("Validador de credenciais da Binance não configurado")
-	}
+        if service.credentialValidator == nil {
+                return errors.New("Binance credential validator is not configured")
+        }
 
 	validationError := service.credentialValidator.ValidateCredentials(validationContext, updatedAPIKey, updatedAPISecret)
 	if validationError != nil {

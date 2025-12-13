@@ -47,23 +47,23 @@ func (server *Server) RegisterRoutes() http.Handler {
 }
 
 func (server *Server) renderDashboard(responseWriter http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet {
-		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
+        if request.Method != http.MethodGet {
+                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+                return
+        }
 
-	if !server.CredentialService.HasValidBinanceCredentials() {
-		responseWriter.WriteHeader(http.StatusServiceUnavailable)
-		server.renderErrorPage(responseWriter, "Credenciais da Binance ausentes ou inválidas. Informe uma chave e segredo válidos para continuar.")
-		return
-	}
+        if !server.CredentialService.HasValidBinanceCredentials() {
+                responseWriter.WriteHeader(http.StatusServiceUnavailable)
+                server.renderErrorPage(responseWriter, "Binance credentials are missing or invalid. Please provide a valid API Key and Secret Key to continue.")
+                return
+        }
 
-	dashboardContext, contextError := server.buildDashboardViewModel(request.Context())
-	if contextError != nil {
-		log.Printf("Dashboard data error: %v", contextError)
-		http.Error(responseWriter, "Não foi possível carregar o painel", http.StatusInternalServerError)
-		return
-	}
+        dashboardContext, contextError := server.buildDashboardViewModel(request.Context())
+        if contextError != nil {
+                log.Printf("Dashboard data error: %v", contextError)
+                http.Error(responseWriter, "Could not load dashboard data", http.StatusInternalServerError)
+                return
+        }
 
 	templateError := server.Templates.ExecuteTemplate(responseWriter, "index.html", dashboardContext)
 	if templateError != nil {
@@ -81,28 +81,28 @@ func (server *Server) handleSellRequest(responseWriter http.ResponseWriter, requ
 }
 
 func (server *Server) handleTransactionRequest(responseWriter http.ResponseWriter, request *http.Request, operationType string) {
-	if request.Method != http.MethodPost {
-		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
+        if request.Method != http.MethodPost {
+                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+                return
+        }
 
-	if !server.CredentialService.HasValidBinanceCredentials() {
-		responseWriter.WriteHeader(http.StatusServiceUnavailable)
-		server.renderErrorPage(responseWriter, "Credenciais da Binance ausentes ou inválidas. Informe uma chave e segredo válidos para continuar.")
-		return
-	}
+        if !server.CredentialService.HasValidBinanceCredentials() {
+                responseWriter.WriteHeader(http.StatusServiceUnavailable)
+                server.renderErrorPage(responseWriter, "Binance credentials are missing or invalid. Please provide a valid API Key and Secret Key to continue.")
+                return
+        }
 
-	quantity, quantityError := strconv.ParseFloat(request.FormValue("quantity"), 64)
-	if quantityError != nil {
-		http.Error(responseWriter, "Quantidade inválida", http.StatusBadRequest)
-		return
-	}
+        quantity, quantityError := strconv.ParseFloat(request.FormValue("quantity"), 64)
+        if quantityError != nil {
+                http.Error(responseWriter, "Invalid quantity", http.StatusBadRequest)
+                return
+        }
 
-	pricePerUnit, priceParseError := strconv.ParseFloat(request.FormValue("price_per_unit"), 64)
-	if priceParseError != nil {
-		http.Error(responseWriter, "Preço inválido", http.StatusBadRequest)
-		return
-	}
+        pricePerUnit, priceParseError := strconv.ParseFloat(request.FormValue("price_per_unit"), 64)
+        if priceParseError != nil {
+                http.Error(responseWriter, "Invalid price", http.StatusBadRequest)
+                return
+        }
 
 	transaction := domain.Transaction{
 		OperationType: operationType,
@@ -131,11 +131,11 @@ func (server *Server) handleEmailAlertRequest(responseWriter http.ResponseWriter
 		return
 	}
 
-	if !server.CredentialService.HasValidBinanceCredentials() {
-		responseWriter.WriteHeader(http.StatusServiceUnavailable)
-		server.renderErrorPage(responseWriter, "Credenciais da Binance ausentes ou inválidas. Informe uma chave e segredo válidos para continuar.")
-		return
-	}
+        if !server.CredentialService.HasValidBinanceCredentials() {
+                responseWriter.WriteHeader(http.StatusServiceUnavailable)
+                server.renderErrorPage(responseWriter, "Binance credentials are missing or invalid. Please provide a valid API Key and Secret Key to continue.")
+                return
+        }
 
 	alert := domain.EmailAlert{
 		RecipientAddress: request.FormValue("recipient_address"),
@@ -162,11 +162,11 @@ func (server *Server) handleListTransactions(responseWriter http.ResponseWriter,
 		return
 	}
 
-	if !server.CredentialService.HasValidBinanceCredentials() {
-		responseWriter.WriteHeader(http.StatusServiceUnavailable)
-		server.renderErrorPage(responseWriter, "Credenciais da Binance ausentes ou inválidas. Informe uma chave e segredo válidos para continuar.")
-		return
-	}
+        if !server.CredentialService.HasValidBinanceCredentials() {
+                responseWriter.WriteHeader(http.StatusServiceUnavailable)
+                server.renderErrorPage(responseWriter, "Binance credentials are missing or invalid. Please provide a valid API Key and Secret Key to continue.")
+                return
+        }
 
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 	defer cancel()
@@ -198,13 +198,13 @@ func (server *Server) handleUpdateBinanceCredentials(responseWriter http.Respons
 	validationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
 	defer cancel()
 
-	validationError := server.CredentialService.ValidateAndPersistCredentials(validationContext, providedAPIKey, providedAPISecret)
-	if validationError != nil {
-		log.Printf("Falha ao validar credenciais Binance: %v", validationError)
-		responseWriter.WriteHeader(http.StatusBadRequest)
-		server.renderErrorPage(responseWriter, validationError.Error())
-		return
-	}
+        validationError := server.CredentialService.ValidateAndPersistCredentials(validationContext, providedAPIKey, providedAPISecret)
+        if validationError != nil {
+                log.Printf("Binance credential validation failed: %v", validationError)
+                responseWriter.WriteHeader(http.StatusBadRequest)
+                server.renderErrorPage(responseWriter, validationError.Error())
+                return
+        }
 
 	http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
 }
@@ -218,19 +218,19 @@ func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, r
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 6*time.Second)
 	defer cancel()
 
-	availableSymbols, fetchError := server.BinanceSymbolService.FetchAvailableSymbols(contextWithTimeout)
-	if fetchError != nil {
-		log.Printf("Could not fetch Binance symbols: %v", fetchError)
-		http.Error(responseWriter, "Não foi possível buscar os ativos da Binance", http.StatusBadGateway)
-		return
-	}
+        availableSymbols, fetchError := server.BinanceSymbolService.FetchAvailableSymbols(contextWithTimeout)
+        if fetchError != nil {
+                log.Printf("Could not fetch Binance symbols: %v", fetchError)
+                http.Error(responseWriter, "Could not fetch Binance tradable symbols", http.StatusBadGateway)
+                return
+        }
 
 	responseWriter.Header().Set("Content-Type", "application/json")
-	encodeError := json.NewEncoder(responseWriter).Encode(BinanceSymbolsResponse{Symbols: availableSymbols})
-	if encodeError != nil {
-		log.Printf("Could not encode symbols: %v", encodeError)
-		http.Error(responseWriter, "Falha ao serializar os ativos", http.StatusInternalServerError)
-	}
+        encodeError := json.NewEncoder(responseWriter).Encode(BinanceSymbolsResponse{Symbols: availableSymbols})
+        if encodeError != nil {
+                log.Printf("Could not encode symbols: %v", encodeError)
+                http.Error(responseWriter, "Failed to serialize Binance symbols", http.StatusInternalServerError)
+        }
 }
 
 func (server *Server) buildDashboardViewModel(requestContext context.Context) (*DashboardViewModel, error) {
@@ -251,10 +251,10 @@ func (server *Server) buildDashboardViewModel(requestContext context.Context) (*
 }
 
 func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, message string) {
-	errorContext := map[string]string{"Message": message}
-	templateError := server.Templates.ExecuteTemplate(responseWriter, "error.html", errorContext)
-	if templateError != nil {
-		log.Printf("Error template render failed: %v", templateError)
+        errorContext := map[string]string{"Message": message}
+        templateError := server.Templates.ExecuteTemplate(responseWriter, "error.html", errorContext)
+        if templateError != nil {
+                log.Printf("Error template render failed: %v", templateError)
 		http.Error(responseWriter, message, http.StatusInternalServerError)
 	}
 }
