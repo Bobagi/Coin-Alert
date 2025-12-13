@@ -2,6 +2,7 @@ package httpserver
 
 import (
     "context"
+    "encoding/json"
     "html/template"
     "log"
     "net/http"
@@ -13,18 +14,22 @@ import (
 )
 
 type Server struct {
-    TransactionService *service.TransactionService
-    EmailAlertService  *service.EmailAlertService
-    AutomationService  *service.AutomationService
-    Templates          *template.Template
+    TransactionService  *service.TransactionService
+    EmailAlertService   *service.EmailAlertService
+    AutomationService   *service.AutomationService
+    CredentialService   *service.CredentialService
+    BinanceSymbolService *service.BinanceSymbolService
+    Templates           *template.Template
 }
 
-func NewServer(transactionService *service.TransactionService, emailAlertService *service.EmailAlertService, automationService *service.AutomationService, templates *template.Template) *Server {
+func NewServer(transactionService *service.TransactionService, emailAlertService *service.EmailAlertService, automationService *service.AutomationService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, templates *template.Template) *Server {
     return &Server{
-        TransactionService: transactionService,
-        EmailAlertService:  emailAlertService,
-        AutomationService:  automationService,
-        Templates:          templates,
+        TransactionService:  transactionService,
+        EmailAlertService:   emailAlertService,
+        AutomationService:   automationService,
+        CredentialService:   credentialService,
+        BinanceSymbolService: binanceSymbolService,
+        Templates:           templates,
     }
 }
 
@@ -36,6 +41,8 @@ func (server *Server) RegisterRoutes() http.Handler {
     router.HandleFunc("/alerts/email", server.handleEmailAlertRequest)
     router.HandleFunc("/health", server.handleHealthCheck)
     router.HandleFunc("/transactions", server.handleListTransactions)
+    router.HandleFunc("/settings/binance", server.handleUpdateBinanceCredentials)
+    router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
     return router
 }
 
@@ -45,8 +52,20 @@ func (server *Server) renderDashboard(responseWriter http.ResponseWriter, reques
         return
     }
 
-    renderContext := map[string]interface{}{}
-    templateError := server.Templates.ExecuteTemplate(responseWriter, "index.html", renderContext)
+    if !server.CredentialService.HasValidBinanceCredentials() {
+        responseWriter.WriteHeader(http.StatusServiceUnavailable)
+        server.renderErrorPage(responseWriter, "Credenciais da Binance ausentes ou inválidas. Informe uma chave e segredo válidos para continuar.")
+        return
+    }
+
+    dashboardContext, contextError := server.buildDashboardViewModel(request.Context())
+    if contextError != nil {
+        log.Printf("Dashboard data error: %v", contextError)
+        http.Error(responseWriter, "Não foi possível carregar o painel", http.StatusInternalServerError)
+        return
+    }
+
+    templateError := server.Templates.ExecuteTemplate(responseWriter, "index.html", dashboardContext)
     if templateError != nil {
         log.Printf("Template render error: %v", templateError)
         http.Error(responseWriter, "Could not render page", http.StatusInternalServerError)
@@ -64,6 +83,12 @@ func (server *Server) handleSellRequest(responseWriter http.ResponseWriter, requ
 func (server *Server) handleTransactionRequest(responseWriter http.ResponseWriter, request *http.Request, operationType string) {
     if request.Method != http.MethodPost {
         responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+        return
+    }
+
+    if !server.CredentialService.HasValidBinanceCredentials() {
+        responseWriter.WriteHeader(http.StatusServiceUnavailable)
+        server.renderErrorPage(responseWriter, "Credenciais da Binance ausentes ou inválidas. Informe uma chave e segredo válidos para continuar.")
         return
     }
 
@@ -106,6 +131,12 @@ func (server *Server) handleEmailAlertRequest(responseWriter http.ResponseWriter
         return
     }
 
+    if !server.CredentialService.HasValidBinanceCredentials() {
+        responseWriter.WriteHeader(http.StatusServiceUnavailable)
+        server.renderErrorPage(responseWriter, "Credenciais da Binance ausentes ou inválidas. Informe uma chave e segredo válidos para continuar.")
+        return
+    }
+
     alert := domain.EmailAlert{
         RecipientAddress: request.FormValue("recipient_address"),
         Subject:          request.FormValue("subject"),
@@ -131,6 +162,12 @@ func (server *Server) handleListTransactions(responseWriter http.ResponseWriter,
         return
     }
 
+    if !server.CredentialService.HasValidBinanceCredentials() {
+        responseWriter.WriteHeader(http.StatusServiceUnavailable)
+        server.renderErrorPage(responseWriter, "Credenciais da Binance ausentes ou inválidas. Informe uma chave e segredo válidos para continuar.")
+        return
+    }
+
     contextWithTimeout, cancel := context.WithTimeout(request.Context(), 5*time.Second)
     defer cancel()
 
@@ -147,6 +184,87 @@ func (server *Server) handleListTransactions(responseWriter http.ResponseWriter,
         http.Error(responseWriter, "Could not render transactions", http.StatusInternalServerError)
         return
     }
+}
+
+func (server *Server) handleUpdateBinanceCredentials(responseWriter http.ResponseWriter, request *http.Request) {
+    if request.Method != http.MethodPost {
+        responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+        return
+    }
+
+    providedAPIKey := request.FormValue("binance_api_key")
+    providedAPISecret := request.FormValue("binance_api_secret")
+
+    server.CredentialService.UpdateBinanceCredentials(providedAPIKey, providedAPISecret)
+
+    if !server.CredentialService.HasValidBinanceCredentials() {
+        responseWriter.WriteHeader(http.StatusBadRequest)
+        server.renderErrorPage(responseWriter, "Credenciais inválidas. Verifique se a chave e o segredo foram preenchidos corretamente.")
+        return
+    }
+
+    http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
+}
+
+func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, request *http.Request) {
+    if request.Method != http.MethodGet {
+        responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+        return
+    }
+
+    contextWithTimeout, cancel := context.WithTimeout(request.Context(), 6*time.Second)
+    defer cancel()
+
+    availableSymbols, fetchError := server.BinanceSymbolService.FetchAvailableSymbols(contextWithTimeout)
+    if fetchError != nil {
+        log.Printf("Could not fetch Binance symbols: %v", fetchError)
+        http.Error(responseWriter, "Não foi possível buscar os ativos da Binance", http.StatusBadGateway)
+        return
+    }
+
+    responseWriter.Header().Set("Content-Type", "application/json")
+    encodeError := json.NewEncoder(responseWriter).Encode(BinanceSymbolsResponse{Symbols: availableSymbols})
+    if encodeError != nil {
+        log.Printf("Could not encode symbols: %v", encodeError)
+        http.Error(responseWriter, "Falha ao serializar os ativos", http.StatusInternalServerError)
+    }
+}
+
+func (server *Server) buildDashboardViewModel(requestContext context.Context) (*DashboardViewModel, error) {
+    contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
+    defer cancel()
+
+    transactions, listError := server.TransactionService.ListTransactions(contextWithTimeout, 100)
+    if listError != nil {
+        return nil, listError
+    }
+
+    return &DashboardViewModel{
+        Transactions:            transactions,
+        IsBinanceConfigured:     server.CredentialService.HasValidBinanceCredentials(),
+        BinanceAPIKeyMasked:     server.CredentialService.GetMaskedBinanceAPIKey(),
+        BinanceAPISecretMasked:  server.CredentialService.GetMaskedBinanceAPISecret(),
+    }, nil
+}
+
+func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, message string) {
+    errorContext := map[string]string{"Message": message}
+    templateError := server.Templates.ExecuteTemplate(responseWriter, "error.html", errorContext)
+    if templateError != nil {
+        log.Printf("Error template render failed: %v", templateError)
+        http.Error(responseWriter, message, http.StatusInternalServerError)
+    }
+}
+
+type DashboardViewModel struct {
+    Transactions           []domain.Transaction
+    IsBinanceConfigured    bool
+    BinanceAPIKeyMasked    string
+    BinanceAPISecretMasked string
+}
+
+type BinanceSymbolsResponse struct {
+    Symbols []string `json:"symbols"`
 }
 
 func (server *Server) handleHealthCheck(responseWriter http.ResponseWriter, request *http.Request) {

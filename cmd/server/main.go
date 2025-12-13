@@ -33,13 +33,15 @@ func main() {
     transactionService := service.NewTransactionService(transactionRepository)
     emailAlertService := service.NewEmailAlertService(emailAlertRepository, applicationConfiguration.EmailSenderAddress, applicationConfiguration.EmailSenderPassword, applicationConfiguration.EmailSMTPHost, applicationConfiguration.EmailSMTPPort)
     automationService := service.NewAutomationService(transactionService, applicationConfiguration.AutomaticSellIntervalMinutes, applicationConfiguration.DailyPurchaseIntervalMinutes)
+    credentialService := service.NewCredentialService(applicationConfiguration.BinanceAPIKey, applicationConfiguration.BinanceAPISecret)
+    binanceSymbolService := service.NewBinanceSymbolService()
 
     parsedTemplates, templateError := parseHTMLTemplates("templates")
     if templateError != nil {
         log.Fatalf("Could not parse templates: %v", templateError)
     }
 
-    server := httpserver.NewServer(transactionService, emailAlertService, automationService, parsedTemplates)
+    server := httpserver.NewServer(transactionService, emailAlertService, automationService, credentialService, binanceSymbolService, parsedTemplates)
     router := server.RegisterRoutes()
 
     applicationContext, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

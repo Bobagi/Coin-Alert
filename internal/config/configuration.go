@@ -16,6 +16,8 @@ type ApplicationConfiguration struct {
     EmailSenderPassword           string
     EmailSMTPHost                 string
     EmailSMTPPort                 int
+    BinanceAPIKey                 string
+    BinanceAPISecret              string
 }
 
 func LoadApplicationConfiguration() ApplicationConfiguration {
@@ -33,6 +35,8 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
         EmailSenderPassword:          getEnvironmentValueWithDefault("EMAIL_SENDER_PASSWORD", ""),
         EmailSMTPHost:                getEnvironmentValueWithDefault("EMAIL_SMTP_HOST", ""),
         EmailSMTPPort:                emailSMTPPort,
+        BinanceAPIKey:                getEnvironmentValueWithDefault("BINANCE_API_KEY", ""),
+        BinanceAPISecret:             getEnvironmentValueWithDefault("BINANCE_API_SECRET", ""),
     }
 
     logNonSensitiveConfiguration(configuration)
