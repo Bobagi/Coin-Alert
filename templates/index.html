@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coin Alert - Painel</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; }
+        header { background: linear-gradient(120deg, #06b6d4, #6366f1); padding: 24px; color: white; }
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+        h2 { margin-top: 0; }
+        label { display: block; margin-bottom: 4px; font-weight: 600; }
+        input, textarea { width: 100%; padding: 10px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; }
+        button { background: linear-gradient(120deg, #22c55e, #16a34a); border: none; padding: 12px 16px; border-radius: 10px; color: white; font-weight: 700; cursor: pointer; width: 100%; }
+        button.secondary { background: linear-gradient(120deg, #ef4444, #dc2626); }
+        .transactions { max-height: 400px; overflow-y: auto; }
+        .transaction-item { padding: 12px; border-bottom: 1px solid #1f2937; display: flex; justify-content: space-between; align-items: center; }
+        .badge { padding: 6px 10px; border-radius: 999px; font-weight: 700; }
+        .badge.buy { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .badge.sell { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .muted { color: #94a3b8; font-size: 0.9em; }
+        .notes { margin-top: 8px; color: #e2e8f0; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Coin Alert • Operações e Alertas</h1>
+    <p>Sistema reescrito em Go com foco em SOLID e automações seguras.</p>
+</header>
+<div class="container">
+    <div class="grid">
+        <div class="card">
+            <h2>Registrar Compra</h2>
+            <form action="/transactions/buy" method="post">
+                <label for="asset_symbol_buy">Ativo</label>
+                <input id="asset_symbol_buy" name="asset_symbol" placeholder="Ex: BTC" required>
+                <label for="quantity_buy">Quantidade</label>
+                <input id="quantity_buy" name="quantity" type="number" step="0.00000001" min="0" required>
+                <label for="price_buy">Preço unitário</label>
+                <input id="price_buy" name="price_per_unit" type="number" step="0.00000001" min="0" required>
+                <label for="notes_buy">Observações</label>
+                <textarea id="notes_buy" name="notes" rows="2" placeholder="Ex: Compra manual via carteira"></textarea>
+                <button type="submit">Salvar compra</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Registrar Venda</h2>
+            <form action="/transactions/sell" method="post">
+                <label for="asset_symbol_sell">Ativo</label>
+                <input id="asset_symbol_sell" name="asset_symbol" placeholder="Ex: ETH" required>
+                <label for="quantity_sell">Quantidade</label>
+                <input id="quantity_sell" name="quantity" type="number" step="0.00000001" min="0" required>
+                <label for="price_sell">Preço unitário</label>
+                <input id="price_sell" name="price_per_unit" type="number" step="0.00000001" min="0" required>
+                <label for="notes_sell">Observações</label>
+                <textarea id="notes_sell" name="notes" rows="2" placeholder="Ex: Venda automática programada"></textarea>
+                <button class="secondary" type="submit">Salvar venda</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Enviar alerta por e-mail</h2>
+            <form action="/alerts/email" method="post">
+                <label for="recipient_address">Destinatário</label>
+                <input id="recipient_address" name="recipient_address" type="email" placeholder="usuario@dominio.com" required>
+                <label for="subject">Assunto</label>
+                <input id="subject" name="subject" placeholder="Ex: Preço atingiu alvo" required>
+                <label for="message_body">Mensagem</label>
+                <textarea id="message_body" name="message_body" rows="3" placeholder="Contextualize o alerta" required></textarea>
+                <button type="submit">Enviar alerta</button>
+            </form>
+        </div>
+    </div>
+    <div class="card" style="margin-top: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>Operações recentes</h2>
+            <a href="/transactions" style="color: #22c55e; font-weight: 700;">Recarregar</a>
+        </div>
+        <div class="transactions" id="transactions-list">
+            {{template "partials/transactions.html" .}}
+        </div>
+    </div>
+</div>
+</body>
+</html>

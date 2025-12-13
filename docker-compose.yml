@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     ports:
-      - "${EXTERNAL_DB_PORT}:${DB_PORT}"
+      - "${EXTERNAL_DB_PORT:-5432}:${DB_PORT}"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,76 +23,15 @@ services:
         max-size: "50m"
         max-file: "7"
 
-  api:
+  app:
     build: .
     depends_on:
       db:
         condition: service_healthy
     env_file:
       - .env
-    volumes:
-      - .:/app
     ports:
-      - "${API_PORT}:5020"
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "7"
-
-  send_email:
-    build: .
-    depends_on:
-      api:
-        condition: service_started
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    entrypoint: []
-    command: ["python", "scripts/send_email.py"]
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "7"
-
-  auto_sell:
-    build: .
-    restart: always
-    depends_on:
-      db:
-        condition: service_healthy
-      api:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      API_URL: ${API_URL}
-    volumes:
-      - .:/app
-    entrypoint: []
-    command: ["python", "scripts/auto_sell.py"]
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "7"
-
-  daily_buy:
-    build: .
-    restart: always
-    depends_on:
-      api:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      API_URL: ${API_URL}
-    volumes:
-      - .:/app
-    entrypoint: []
-    command: ["python", "scripts/daily_buy.py"]
+      - "${API_PORT:-5020}:5020"
     logging:
       driver: json-file
       options:
