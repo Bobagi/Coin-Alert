@@ -31,7 +31,7 @@ services:
     env_file:
       - .env
     ports:
-      - "${API_PORT:-5020}:5020"
+      - "${API_PORT:-5020}:${API_PORT:-5020}"
     logging:
       driver: json-file
       options:

@@ -35,9 +35,21 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
         EmailSMTPPort:                emailSMTPPort,
     }
 
-    log.Printf("Loaded configuration: %+v", configuration)
+    logNonSensitiveConfiguration(configuration)
 
     return configuration
+}
+
+func logNonSensitiveConfiguration(configuration ApplicationConfiguration) {
+    log.Printf(
+        "Loaded configuration (non-sensitive): serverPort=%s applicationBaseURL=%s automaticSellIntervalMinutes=%d dailyPurchaseIntervalMinutes=%d emailSMTPHost=%s emailSMTPPort=%d",
+        configuration.ServerPort,
+        configuration.ApplicationBaseURL,
+        configuration.AutomaticSellIntervalMinutes,
+        configuration.DailyPurchaseIntervalMinutes,
+        configuration.EmailSMTPHost,
+        configuration.EmailSMTPPort,
+    )
 }
 
 func buildDatabaseURL() string {

@@ -35,7 +35,7 @@ EMAIL_SMTP_PORT=587
    ```
    docker compose up --build
    ```
-2. Acesse `http://localhost:5020` para visualizar o painel.
+2. Acesse `http://localhost:${API_PORT:-5020}` (ou o valor configurado em `API_PORT`) para visualizar o painel.
 
 O serviço `app` só inicia após o Postgres estar saudável. O schema é criado automaticamente na inicialização.
 
