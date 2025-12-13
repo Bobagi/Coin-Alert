@@ -7,6 +7,7 @@ import (
     "net/http"
     "os"
     "os/signal"
+    "path/filepath"
     "syscall"
     "time"
 
@@ -33,7 +34,7 @@ func main() {
     emailAlertService := service.NewEmailAlertService(emailAlertRepository, applicationConfiguration.EmailSenderAddress, applicationConfiguration.EmailSenderPassword, applicationConfiguration.EmailSMTPHost, applicationConfiguration.EmailSMTPPort)
     automationService := service.NewAutomationService(transactionService, applicationConfiguration.AutomaticSellIntervalMinutes, applicationConfiguration.DailyPurchaseIntervalMinutes)
 
-    parsedTemplates, templateError := template.ParseGlob("templates/**/*.html")
+    parsedTemplates, templateError := parseHTMLTemplates("templates")
     if templateError != nil {
         log.Fatalf("Could not parse templates: %v", templateError)
     }
@@ -68,4 +69,20 @@ func main() {
     }
 
     log.Println("Application stopped")
+}
+
+func parseHTMLTemplates(templatesDirectory string) (*template.Template, error) {
+    rootTemplatesPattern := filepath.Join(templatesDirectory, "*.html")
+    parsedRootTemplates, rootTemplatesParseError := template.ParseGlob(rootTemplatesPattern)
+    if rootTemplatesParseError != nil {
+        return nil, rootTemplatesParseError
+    }
+
+    partialTemplatesPattern := filepath.Join(templatesDirectory, "partials", "*.html")
+    parsedTemplatesWithPartials, partialTemplatesParseError := parsedRootTemplates.ParseGlob(partialTemplatesPattern)
+    if partialTemplatesParseError != nil {
+        return nil, partialTemplatesParseError
+    }
+
+    return parsedTemplatesWithPartials, nil
 }
