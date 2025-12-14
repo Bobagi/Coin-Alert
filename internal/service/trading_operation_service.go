@@ -32,24 +32,27 @@ func (service *TradingOperationService) UpdateCapitalThreshold(newCapitalThresho
 }
 
 func (service *TradingOperationService) RecordPurchaseOperation(contextWithTimeout context.Context, operation domain.TradingOperation) (int64, error) {
-	validationError := service.validatePurchaseOperation(operation)
-	if validationError != nil {
-		return 0, validationError
-	}
+        validationError := service.validatePurchaseOperation(operation)
+        if validationError != nil {
+                return 0, validationError
+        }
 
 	allocationCheckError := service.ensureCapitalThresholdNotExceeded(contextWithTimeout, operation)
 	if allocationCheckError != nil {
 		return 0, allocationCheckError
 	}
 
-	operation.Identifier = 0
-	operation.Status = domain.TradingOperationStatusOpen
-	operation.PurchaseTimestamp = time.Now()
-	if operation.TargetProfitPercent <= 0 {
-		operation.TargetProfitPercent = service.ProfitTargetPercent
-	}
+        operation.Identifier = 0
+        operation.Status = domain.TradingOperationStatusOpen
+        operation.PurchaseTimestamp = time.Now()
+        if operation.TargetProfitPercent <= 0 {
+                operation.TargetProfitPercent = service.ProfitTargetPercent
+        }
 
-	return service.TradingOperationRepository.CreatePurchaseOperation(contextWithTimeout, operation)
+        targetSellPricePerUnit := operation.TargetSellPricePerUnit()
+        operation.SellTargetPricePerUnit = &targetSellPricePerUnit
+
+        return service.TradingOperationRepository.CreatePurchaseOperation(contextWithTimeout, operation)
 }
 
 func (service *TradingOperationService) ListOperations(contextWithTimeout context.Context, limit int) ([]domain.TradingOperation, error) {
