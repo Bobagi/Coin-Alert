@@ -148,6 +148,94 @@
             </div>
         </div>
     </div>
+    <div class="grid" style="margin-top: 20px;">
+        <div class="card">
+            <h2>Next scheduled operation</h2>
+            {{if .NextScheduledOperation}}
+            <p class="muted">This operation is persisted and will execute automatically or on demand.</p>
+            <div class="row">
+                <div>
+                    <div class="muted">Type</div>
+                    <div class="pill">{{.NextScheduledOperation.OperationType}}</div>
+                </div>
+                <div>
+                    <div class="muted">Pair</div>
+                    <div class="pill">{{.NextScheduledOperation.TradingPairSymbol}}</div>
+                </div>
+            </div>
+            <div class="row" style="margin-top:12px;">
+                <div>
+                    <div class="muted">Capital threshold</div>
+                    <div class="pill">{{printf "%.2f" .NextScheduledOperation.CapitalThreshold}}</div>
+                </div>
+                <div>
+                    <div class="muted">Target profit (%)</div>
+                    <div class="pill">{{printf "%.2f" .NextScheduledOperation.TargetProfitPercent}}</div>
+                </div>
+            </div>
+            <div class="row" style="margin-top:12px;">
+                <div>
+                    <div class="muted">Scheduled time</div>
+                    <div class="pill">{{.NextScheduledOperation.ScheduledExecutionTime}}</div>
+                </div>
+                <div>
+                    <div class="muted">Status</div>
+                    <div class="pill">{{.NextScheduledOperation.Status}}</div>
+                </div>
+            </div>
+            <form action="/operations/execute-next" method="post" style="margin-top:16px;">
+                <button type="submit">Execute next operation now</button>
+            </form>
+            {{else}}
+            <p class="muted">No scheduled operation is registered yet. A new one will be created on the next purchase or automation cycle.</p>
+            {{end}}
+        </div>
+        <div class="card">
+            <h2>Scheduled operations</h2>
+            {{if .ScheduledOperations}}
+            <div class="transactions">
+                {{range .ScheduledOperations}}
+                <div class="transaction-item">
+                    <div>
+                        <div><strong>{{.OperationType}}</strong> on {{.TradingPairSymbol}}</div>
+                        <div class="muted">Scheduled: {{.ScheduledExecutionTime}}</div>
+                        <div class="muted">Threshold: {{printf "%.2f" .CapitalThreshold}} • Target: {{printf "%.2f" .TargetProfitPercent}}%</div>
+                    </div>
+                    <div class="badge" style="background:rgba(99,102,241,0.15); color:#a5b4fc;">{{.Status}}</div>
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <p class="muted">No pending operations.</p>
+            {{end}}
+        </div>
+        <div class="card">
+            <h2>Execution history</h2>
+            {{if .ExecutionHistory}}
+            <div class="transactions">
+                {{range .ExecutionHistory}}
+                <div class="transaction-item">
+                    <div>
+                        <div><strong>{{.OperationType}}</strong> on {{.TradingPairSymbol}}</div>
+                        <div class="muted">Executed at {{.ExecutedAt}}</div>
+                        <div class="muted">Unit: {{printf "%.6f" .UnitPrice}} • Qty: {{printf "%.6f" .Quantity}} • Total: {{printf "%.2f" .TotalValue}}</div>
+                        {{if .ErrorMessage}}
+                        <div class="muted" style="color:#ef4444;">Error: {{.ErrorMessage}}</div>
+                        {{end}}
+                    </div>
+                    {{if .Success}}
+                    <div class="badge buy">SUCCESS</div>
+                    {{else}}
+                    <div class="badge sell">FAILED</div>
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <p class="muted">No executions recorded yet.</p>
+            {{end}}
+        </div>
+    </div>
     <div class="card" style="margin-top: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <h2>Recent operations</h2>

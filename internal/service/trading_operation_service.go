@@ -57,10 +57,10 @@ func (service *TradingOperationService) ListOperations(contextWithTimeout contex
 }
 
 func (service *TradingOperationService) CloseOperationsThatReachedTargetPrice(contextWithTimeout context.Context, currentPricePerUnit float64) error {
-	openOperations, fetchError := service.TradingOperationRepository.ListOpenOperations(contextWithTimeout)
-	if fetchError != nil {
-		return fetchError
-	}
+        openOperations, fetchError := service.TradingOperationRepository.ListOpenOperations(contextWithTimeout)
+        if fetchError != nil {
+                return fetchError
+        }
 
 	for _, openOperation := range openOperations {
 		if openOperation.HasReachedTarget(currentPricePerUnit) {
@@ -71,7 +71,11 @@ func (service *TradingOperationService) CloseOperationsThatReachedTargetPrice(co
 		}
 	}
 
-	return nil
+        return nil
+}
+
+func (service *TradingOperationService) ListOpenOperations(contextWithTimeout context.Context) ([]domain.TradingOperation, error) {
+        return service.TradingOperationRepository.ListOpenOperations(contextWithTimeout)
 }
 
 func (service *TradingOperationService) validatePurchaseOperation(operation domain.TradingOperation) error {

@@ -21,11 +21,11 @@ func NewPostgresEmailAlertRepository(database *sql.DB) *PostgresEmailAlertReposi
 }
 
 func (repository *PostgresEmailAlertRepository) LogEmailAlert(contextWithTimeout context.Context, alert domain.EmailAlert) (int64, error) {
-    insertSQL := `INSERT INTO email_alerts(recipient_address, subject, message_body) VALUES($1, $2, $3) RETURNING id, created_at`
+    insertSQL := `INSERT INTO email_alerts(recipient_address, trading_pair_or_currency, threshold_value) VALUES($1, $2, $3) RETURNING id, created_at`
     statementContext, statementCancel := context.WithTimeout(contextWithTimeout, 5*time.Second)
     defer statementCancel()
 
-    row := repository.Database.QueryRowContext(statementContext, insertSQL, alert.RecipientAddress, alert.Subject, alert.MessageBody)
+    row := repository.Database.QueryRowContext(statementContext, insertSQL, alert.RecipientAddress, alert.TradingPairOrCurrency, alert.ThresholdValue)
     var identifier int64
     var createdAt time.Time
     scanError := row.Scan(&identifier, &createdAt)

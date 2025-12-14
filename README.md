@@ -46,3 +46,5 @@ Alternatively, keep the same credentials used during the first database initiali
 - Capital threshold enforcement for the configured trading pair with automatic sell monitoring.
 - List recent operations with purchase and sell details.
 - Send authenticated SMTP email alerts with persistence.
+- Scheduled operations persisted for visibility, including the next predicted action and manual "execute now" trigger.
+- Execution history recorded for every automated attempt with success and error details.
