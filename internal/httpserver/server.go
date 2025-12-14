@@ -366,6 +366,7 @@ func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, r
 }
 
 func (server *Server) buildDashboardViewModel(requestContext context.Context) (*DashboardViewModel, error) {
+        activeEnvironment := server.CredentialService.GetActiveEnvironmentConfiguration()
         contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
         defer cancel()
 
@@ -484,11 +485,13 @@ func (server *Server) fetchOpenOrders(requestContext context.Context) ([]service
         return server.BinanceTradingService.ListOpenOrders(openOrdersContext, server.SettingsSummary.TradingPairSymbol)
 }
 
-func (server *Server) refreshEnvironmentConfiguration() {()
+func (server *Server) refreshEnvironmentConfiguration() {
+        activeEnvironment := server.CredentialService.GetActiveEnvironmentConfiguration()
         server.BinancePriceService.UpdateEnvironmentConfiguration(activeEnvironment)
         server.BinanceSymbolService.UpdateEnvironmentConfiguration(activeEnvironment)
         server.BinanceTradingService.UpdateEnvironmentConfiguration(activeEnvironment)
         server.SettingsSummary.BinanceAPIBaseURL = activeEnvironment.RESTBaseURL
+        server.SettingsSummary.ActiveBinanceEnvironment = activeEnvironment.EnvironmentName
 }
 
 func (server *Server) logExecutionFailure(requestContext context.Context, operationType string, tradingPairSymbol string, cause error) {
