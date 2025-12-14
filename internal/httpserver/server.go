@@ -14,38 +14,40 @@ import (
 )
 
 type Server struct {
-        TradingOperationService   *service.TradingOperationService
-        EmailAlertService    *service.EmailAlertService
-        AutomationService    *service.TradingAutomationService
-        CredentialService    *service.CredentialService
-        BinanceSymbolService *service.BinanceSymbolService
-        SettingsSummary      DashboardSettingsSummary
-        Templates            *template.Template
+	TradingOperationService *service.TradingOperationService
+	EmailAlertService       *service.EmailAlertService
+	AutomationService       *service.TradingAutomationService
+	CredentialService       *service.CredentialService
+	BinanceSymbolService    *service.BinanceSymbolService
+	BinancePriceService     *service.BinancePriceService
+	SettingsSummary         DashboardSettingsSummary
+	Templates               *template.Template
 }
 
-func NewServer(tradingOperationService *service.TradingOperationService, emailAlertService *service.EmailAlertService, automationService *service.TradingAutomationService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, settingsSummary DashboardSettingsSummary, templates *template.Template) *Server {
-        return &Server{
-                TradingOperationService:   tradingOperationService,
-                EmailAlertService:    emailAlertService,
-                AutomationService:    automationService,
-                CredentialService:    credentialService,
-                BinanceSymbolService: binanceSymbolService,
-                SettingsSummary:      settingsSummary,
-                Templates:            templates,
-        }
+func NewServer(tradingOperationService *service.TradingOperationService, emailAlertService *service.EmailAlertService, automationService *service.TradingAutomationService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, binancePriceService *service.BinancePriceService, settingsSummary DashboardSettingsSummary, templates *template.Template) *Server {
+	return &Server{
+		TradingOperationService: tradingOperationService,
+		EmailAlertService:       emailAlertService,
+		AutomationService:       automationService,
+		CredentialService:       credentialService,
+		BinanceSymbolService:    binanceSymbolService,
+		BinancePriceService:     binancePriceService,
+		SettingsSummary:         settingsSummary,
+		Templates:               templates,
+	}
 }
 
 func (server *Server) RegisterRoutes() http.Handler {
-        router := http.NewServeMux()
-        router.HandleFunc("/", server.renderDashboard)
-        router.HandleFunc("/operations/purchase", server.handlePurchaseRequest)
-        router.HandleFunc("/alerts/email", server.handleEmailAlertRequest)
-        router.HandleFunc("/health", server.handleHealthCheck)
-        router.HandleFunc("/operations", server.handleListOperations)
-        router.HandleFunc("/settings/binance", server.handleUpdateBinanceCredentials)
-        router.HandleFunc("/settings/binance/revalidate", server.handleRevalidateBinanceCredentials)
-        router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
-        return router
+	router := http.NewServeMux()
+	router.HandleFunc("/", server.renderDashboard)
+	router.HandleFunc("/operations/purchase", server.handlePurchaseRequest)
+	router.HandleFunc("/alerts/email", server.handleEmailAlertRequest)
+	router.HandleFunc("/health", server.handleHealthCheck)
+	router.HandleFunc("/operations", server.handleListOperations)
+	router.HandleFunc("/settings/binance", server.handleUpdateBinanceCredentials)
+	router.HandleFunc("/settings/binance/revalidate", server.handleRevalidateBinanceCredentials)
+	router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
+	return router
 }
 
 func (server *Server) renderDashboard(responseWriter http.ResponseWriter, request *http.Request) {
@@ -75,10 +77,10 @@ func (server *Server) renderDashboard(responseWriter http.ResponseWriter, reques
 }
 
 func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, request *http.Request) {
-        if request.Method != http.MethodPost {
-                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-                return
-        }
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
 	if !server.CredentialService.HasValidBinanceCredentials() {
 		responseWriter.WriteHeader(http.StatusServiceUnavailable)
@@ -86,40 +88,60 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 		return
 	}
 
-        quantity, quantityError := strconv.ParseFloat(request.FormValue("quantity"), 64)
-        if quantityError != nil {
-                http.Error(responseWriter, "Invalid quantity", http.StatusBadRequest)
-                return
-        }
+	capitalThresholdText := request.FormValue("capital_threshold")
+	capitalThreshold, capitalThresholdError := strconv.ParseFloat(capitalThresholdText, 64)
+	if capitalThresholdError != nil {
+		http.Error(responseWriter, "Invalid capital threshold", http.StatusBadRequest)
+		return
+	}
 
-        pricePerUnit, priceParseError := strconv.ParseFloat(request.FormValue("price_per_unit"), 64)
-        if priceParseError != nil {
-                http.Error(responseWriter, "Invalid price", http.StatusBadRequest)
-                return
-        }
+	targetProfitPercent, targetParseError := strconv.ParseFloat(request.FormValue("target_profit_percent"), 64)
+	if targetParseError != nil {
+		http.Error(responseWriter, "Invalid profit percent", http.StatusBadRequest)
+		return
+	}
 
-        targetProfitPercent, targetParseError := strconv.ParseFloat(request.FormValue("target_profit_percent"), 64)
-        if targetParseError != nil {
-                http.Error(responseWriter, "Invalid profit percent", http.StatusBadRequest)
-                return
-        }
+	currentPriceContext, priceCancel := context.WithTimeout(request.Context(), 6*time.Second)
+	defer priceCancel()
 
-        operation := domain.TradingOperation{
-                TradingPairSymbol:    request.FormValue("trading_pair_symbol"),
-                QuantityPurchased:    quantity,
-                PurchasePricePerUnit: pricePerUnit,
-                TargetProfitPercent:  targetProfitPercent,
-        }
+	currentPricePerUnit, priceLookupError := server.BinancePriceService.GetCurrentPrice(currentPriceContext, request.FormValue("trading_pair_symbol"))
+	if priceLookupError != nil {
+		log.Printf("Could not fetch current price for purchase: %v", priceLookupError)
+		http.Error(responseWriter, "Could not fetch current price for the selected pair", http.StatusBadGateway)
+		return
+	}
 
-        contextWithTimeout, cancel := context.WithTimeout(request.Context(), 5*time.Second)
-        defer cancel()
+	if currentPricePerUnit <= 0 {
+		http.Error(responseWriter, "Invalid price received for the selected pair", http.StatusBadGateway)
+		return
+	}
 
-        _, creationError := server.TradingOperationService.RecordPurchaseOperation(contextWithTimeout, operation)
-        if creationError != nil {
-                log.Printf("Trading operation creation failed: %v", creationError)
-                http.Error(responseWriter, creationError.Error(), http.StatusBadRequest)
-                return
-        }
+	if capitalThreshold <= 0 {
+		http.Error(responseWriter, "Capital threshold must be greater than zero", http.StatusBadRequest)
+		return
+	}
+
+	server.TradingOperationService.UpdateCapitalThreshold(capitalThreshold)
+	server.SettingsSummary.CapitalThreshold = capitalThreshold
+
+	calculatedQuantity := capitalThreshold / currentPricePerUnit
+
+	operation := domain.TradingOperation{
+		TradingPairSymbol:    request.FormValue("trading_pair_symbol"),
+		QuantityPurchased:    calculatedQuantity,
+		PurchasePricePerUnit: currentPricePerUnit,
+		TargetProfitPercent:  targetProfitPercent,
+	}
+
+	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+	defer cancel()
+
+	_, creationError := server.TradingOperationService.RecordPurchaseOperation(contextWithTimeout, operation)
+	if creationError != nil {
+		log.Printf("Trading operation creation failed: %v", creationError)
+		http.Error(responseWriter, creationError.Error(), http.StatusBadRequest)
+		return
+	}
 
 	http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
 }
@@ -137,10 +159,16 @@ func (server *Server) handleEmailAlertRequest(responseWriter http.ResponseWriter
 	}
 
 	alert := domain.EmailAlert{
-		RecipientAddress: request.FormValue("recipient_address"),
-		Subject:          request.FormValue("subject"),
-		MessageBody:      request.FormValue("message_body"),
+		RecipientAddress:      request.FormValue("recipient_address"),
+		TradingPairOrCurrency: request.FormValue("alert_trading_pair_symbol"),
 	}
+
+	thresholdValue, thresholdParseError := strconv.ParseFloat(request.FormValue("alert_threshold"), 64)
+	if thresholdParseError != nil {
+		http.Error(responseWriter, "Invalid threshold", http.StatusBadRequest)
+		return
+	}
+	alert.ThresholdValue = thresholdValue
 
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 10*time.Second)
 	defer cancel()
@@ -156,10 +184,10 @@ func (server *Server) handleEmailAlertRequest(responseWriter http.ResponseWriter
 }
 
 func (server *Server) handleListOperations(responseWriter http.ResponseWriter, request *http.Request) {
-        if request.Method != http.MethodGet {
-                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-                return
-        }
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
 	if !server.CredentialService.HasValidBinanceCredentials() {
 		responseWriter.WriteHeader(http.StatusServiceUnavailable)
@@ -170,14 +198,14 @@ func (server *Server) handleListOperations(responseWriter http.ResponseWriter, r
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 	defer cancel()
 
-        tradingOperations, listError := server.TradingOperationService.ListOperations(contextWithTimeout, 100)
-        if listError != nil {
-                log.Printf("List transactions failed: %v", listError)
-                http.Error(responseWriter, listError.Error(), http.StatusInternalServerError)
-                return
-        }
+	tradingOperations, listError := server.TradingOperationService.ListOperations(contextWithTimeout, 100)
+	if listError != nil {
+		log.Printf("List transactions failed: %v", listError)
+		http.Error(responseWriter, listError.Error(), http.StatusInternalServerError)
+		return
+	}
 
-        renderError := server.Templates.ExecuteTemplate(responseWriter, "partials/transactions.html", tradingOperations)
+	renderError := server.Templates.ExecuteTemplate(responseWriter, "partials/transactions.html", tradingOperations)
 	if renderError != nil {
 		log.Printf("Partial render failed: %v", renderError)
 		http.Error(responseWriter, "Could not render transactions", http.StatusInternalServerError)
@@ -209,10 +237,10 @@ func (server *Server) handleUpdateBinanceCredentials(responseWriter http.Respons
 }
 
 func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, request *http.Request) {
-        if request.Method != http.MethodGet {
-                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-                return
-        }
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 6*time.Second)
 	defer cancel()
@@ -233,27 +261,27 @@ func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, r
 }
 
 func (server *Server) buildDashboardViewModel(requestContext context.Context) (*DashboardViewModel, error) {
-        contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
-        defer cancel()
+	contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
+	defer cancel()
 
-        tradingOperations, listError := server.TradingOperationService.ListOperations(contextWithTimeout, 100)
-        if listError != nil {
-                return nil, listError
-        }
+	tradingOperations, listError := server.TradingOperationService.ListOperations(contextWithTimeout, 100)
+	if listError != nil {
+		return nil, listError
+	}
 
-        return &DashboardViewModel{
-                TradingOperations:            tradingOperations,
-                IsBinanceConfigured:          server.CredentialService.HasValidBinanceCredentials(),
-                BinanceAPIKeyMasked:          server.CredentialService.GetMaskedBinanceAPIKey(),
-                BinanceAPISecretMasked:       server.CredentialService.GetMaskedBinanceAPISecret(),
-                AutomaticSellIntervalMinutes: server.SettingsSummary.AutomaticSellIntervalMinutes,
-                DailyPurchaseIntervalMinutes: server.SettingsSummary.DailyPurchaseIntervalMinutes,
-                BinanceAPIBaseURL:            server.SettingsSummary.BinanceAPIBaseURL,
-                ApplicationBaseURL:           server.SettingsSummary.ApplicationBaseURL,
-                TradingPairSymbol:            server.SettingsSummary.TradingPairSymbol,
-                CapitalThreshold:             server.SettingsSummary.CapitalThreshold,
-                TargetProfitPercent:          server.SettingsSummary.TargetProfitPercent,
-        }, nil
+	return &DashboardViewModel{
+		TradingOperations:            tradingOperations,
+		IsBinanceConfigured:          server.CredentialService.HasValidBinanceCredentials(),
+		BinanceAPIKeyMasked:          server.CredentialService.GetMaskedBinanceAPIKey(),
+		BinanceAPISecretMasked:       server.CredentialService.GetMaskedBinanceAPISecret(),
+		AutomaticSellIntervalMinutes: server.SettingsSummary.AutomaticSellIntervalMinutes,
+		DailyPurchaseIntervalMinutes: server.SettingsSummary.DailyPurchaseIntervalMinutes,
+		BinanceAPIBaseURL:            server.SettingsSummary.BinanceAPIBaseURL,
+		ApplicationBaseURL:           server.SettingsSummary.ApplicationBaseURL,
+		TradingPairSymbol:            server.SettingsSummary.TradingPairSymbol,
+		CapitalThreshold:             server.SettingsSummary.CapitalThreshold,
+		TargetProfitPercent:          server.SettingsSummary.TargetProfitPercent,
+	}, nil
 }
 
 func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, message string) {
@@ -266,54 +294,54 @@ func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, messag
 }
 
 type DashboardViewModel struct {
-        TradingOperations            []domain.TradingOperation
-        IsBinanceConfigured          bool
-        BinanceAPIKeyMasked          string
-        BinanceAPISecretMasked       string
-        AutomaticSellIntervalMinutes int
-        DailyPurchaseIntervalMinutes int
-        BinanceAPIBaseURL            string
-        ApplicationBaseURL           string
-        TradingPairSymbol            string
-        CapitalThreshold             float64
-        TargetProfitPercent          float64
+	TradingOperations            []domain.TradingOperation
+	IsBinanceConfigured          bool
+	BinanceAPIKeyMasked          string
+	BinanceAPISecretMasked       string
+	AutomaticSellIntervalMinutes int
+	DailyPurchaseIntervalMinutes int
+	BinanceAPIBaseURL            string
+	ApplicationBaseURL           string
+	TradingPairSymbol            string
+	CapitalThreshold             float64
+	TargetProfitPercent          float64
 }
 
 type BinanceSymbolsResponse struct {
-        Symbols []string `json:"symbols"`
+	Symbols []string `json:"symbols"`
 }
 
 func (server *Server) handleHealthCheck(responseWriter http.ResponseWriter, request *http.Request) {
-        responseWriter.WriteHeader(http.StatusOK)
-        responseWriter.Write([]byte("ok"))
+	responseWriter.WriteHeader(http.StatusOK)
+	responseWriter.Write([]byte("ok"))
 }
 
 func (server *Server) handleRevalidateBinanceCredentials(responseWriter http.ResponseWriter, request *http.Request) {
-        if request.Method != http.MethodPost {
-                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-                return
-        }
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
-        revalidationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
-        defer cancel()
+	revalidationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
 
-        revalidationError := server.CredentialService.RevalidateStoredCredentials(revalidationContext)
-        if revalidationError != nil {
-                log.Printf("Binance credential revalidation failed: %v", revalidationError)
-                http.Error(responseWriter, revalidationError.Error(), http.StatusBadRequest)
-                return
-        }
+	revalidationError := server.CredentialService.RevalidateStoredCredentials(revalidationContext)
+	if revalidationError != nil {
+		log.Printf("Binance credential revalidation failed: %v", revalidationError)
+		http.Error(responseWriter, revalidationError.Error(), http.StatusBadRequest)
+		return
+	}
 
-        responseWriter.Header().Set("Content-Type", "application/json")
-        json.NewEncoder(responseWriter).Encode(map[string]string{"message": "Credentials successfully revalidated."})
+	responseWriter.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(responseWriter).Encode(map[string]string{"message": "Credentials successfully revalidated."})
 }
 
 type DashboardSettingsSummary struct {
-        AutomaticSellIntervalMinutes int
-        DailyPurchaseIntervalMinutes int
-        BinanceAPIBaseURL            string
-        ApplicationBaseURL           string
-        TradingPairSymbol            string
-        CapitalThreshold             float64
-        TargetProfitPercent          float64
+	AutomaticSellIntervalMinutes int
+	DailyPurchaseIntervalMinutes int
+	BinanceAPIBaseURL            string
+	ApplicationBaseURL           string
+	TradingPairSymbol            string
+	CapitalThreshold             float64
+	TargetProfitPercent          float64
 }

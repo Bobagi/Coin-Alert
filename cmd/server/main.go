@@ -27,36 +27,36 @@ func main() {
 	}
 	defer postgresConnector.Close()
 
-        tradingOperationRepository := repository.NewPostgresTradingOperationRepository(postgresConnector.Database)
-        emailAlertRepository := repository.NewPostgresEmailAlertRepository(postgresConnector.Database)
-        credentialRepository := repository.NewPostgresBinanceCredentialRepository(postgresConnector.Database)
+	tradingOperationRepository := repository.NewPostgresTradingOperationRepository(postgresConnector.Database)
+	emailAlertRepository := repository.NewPostgresEmailAlertRepository(postgresConnector.Database)
+	credentialRepository := repository.NewPostgresBinanceCredentialRepository(postgresConnector.Database)
 
-        tradingOperationService := service.NewTradingOperationService(tradingOperationRepository, applicationConfiguration.TradingPairSymbol, applicationConfiguration.TradingCapitalThreshold, applicationConfiguration.TargetProfitPercent)
-        emailAlertService := service.NewEmailAlertService(emailAlertRepository, applicationConfiguration.EmailSenderAddress, applicationConfiguration.EmailSenderPassword, applicationConfiguration.EmailSMTPHost, applicationConfiguration.EmailSMTPPort)
-        binancePriceService := service.NewBinancePriceService(applicationConfiguration.BinanceAPIBaseURL)
-        automationService := service.NewTradingAutomationService(tradingOperationService, binancePriceService, applicationConfiguration.TradingPairSymbol, applicationConfiguration.AutomaticSellIntervalMinutes)
-        binanceCredentialValidator := service.NewBinanceCredentialValidator(applicationConfiguration.BinanceAPIBaseURL)
-        credentialService := service.NewCredentialService(credentialRepository, binanceCredentialValidator, applicationConfiguration.BinanceAPIKey, applicationConfiguration.BinanceAPISecret)
-        credentialService.InitializeCredentials(context.Background())
-        binanceSymbolService := service.NewBinanceSymbolService(applicationConfiguration.BinanceAPIBaseURL)
+	tradingOperationService := service.NewTradingOperationService(tradingOperationRepository, applicationConfiguration.TradingPairSymbol, applicationConfiguration.TradingCapitalThreshold, applicationConfiguration.TargetProfitPercent)
+	emailAlertService := service.NewEmailAlertService(emailAlertRepository, applicationConfiguration.EmailSenderAddress, applicationConfiguration.EmailSenderPassword, applicationConfiguration.EmailSMTPHost, applicationConfiguration.EmailSMTPPort)
+	binancePriceService := service.NewBinancePriceService(applicationConfiguration.BinanceAPIBaseURL)
+	automationService := service.NewTradingAutomationService(tradingOperationService, binancePriceService, applicationConfiguration.TradingPairSymbol, applicationConfiguration.AutomaticSellIntervalMinutes)
+	binanceCredentialValidator := service.NewBinanceCredentialValidator(applicationConfiguration.BinanceAPIBaseURL)
+	credentialService := service.NewCredentialService(credentialRepository, binanceCredentialValidator, applicationConfiguration.BinanceAPIKey, applicationConfiguration.BinanceAPISecret)
+	credentialService.InitializeCredentials(context.Background())
+	binanceSymbolService := service.NewBinanceSymbolService(applicationConfiguration.BinanceAPIBaseURL)
 
 	parsedTemplates, templateError := parseHTMLTemplates("templates")
 	if templateError != nil {
 		log.Fatalf("Could not parse templates: %v", templateError)
 	}
 
-        dashboardSettingsSummary := httpserver.DashboardSettingsSummary{
-                AutomaticSellIntervalMinutes: applicationConfiguration.AutomaticSellIntervalMinutes,
-                DailyPurchaseIntervalMinutes: applicationConfiguration.DailyPurchaseIntervalMinutes,
-                BinanceAPIBaseURL:            applicationConfiguration.BinanceAPIBaseURL,
-                ApplicationBaseURL:           applicationConfiguration.ApplicationBaseURL,
-                TradingPairSymbol:            applicationConfiguration.TradingPairSymbol,
-                CapitalThreshold:             applicationConfiguration.TradingCapitalThreshold,
-                TargetProfitPercent:          applicationConfiguration.TargetProfitPercent,
-        }
+	dashboardSettingsSummary := httpserver.DashboardSettingsSummary{
+		AutomaticSellIntervalMinutes: applicationConfiguration.AutomaticSellIntervalMinutes,
+		DailyPurchaseIntervalMinutes: applicationConfiguration.DailyPurchaseIntervalMinutes,
+		BinanceAPIBaseURL:            applicationConfiguration.BinanceAPIBaseURL,
+		ApplicationBaseURL:           applicationConfiguration.ApplicationBaseURL,
+		TradingPairSymbol:            applicationConfiguration.TradingPairSymbol,
+		CapitalThreshold:             applicationConfiguration.TradingCapitalThreshold,
+		TargetProfitPercent:          applicationConfiguration.TargetProfitPercent,
+	}
 
-        server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, credentialService, binanceSymbolService, dashboardSettingsSummary, parsedTemplates)
-        router := server.RegisterRoutes()
+	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, credentialService, binanceSymbolService, binancePriceService, dashboardSettingsSummary, parsedTemplates)
+	router := server.RegisterRoutes()
 
 	applicationContext, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
