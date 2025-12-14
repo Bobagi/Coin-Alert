@@ -18,7 +18,7 @@ Copy `.env.example` to `.env` and adjust the values to match your environment (d
    ```
 2. Open `http://localhost:${API_PORT:-5020}` (or the port configured in `API_PORT`) to access the dashboard.
 
-The `app` service waits for PostgreSQL to become healthy, then applies the schema automatically.
+Database migrations run in the separate `migrate` service before the application starts, keeping schema creation and evolution out of the application runtime.
 
 ### Updating database credentials after data already exists
 If you change `DB_USER` or `DB_PASSWORD` after the `db_data` volume already exists, PostgreSQL will keep the original credentials stored in the volume. To apply new credentials, remove the volume before starting again:
@@ -33,11 +33,12 @@ Alternatively, keep the same credentials used during the first database initiali
 ## Project structure
 - `cmd/server`: application entrypoint.
 - `internal/config`: environment configuration loading.
-- `internal/database`: PostgreSQL connector and schema bootstrap.
+- `internal/database`: PostgreSQL connector and connection lifecycle.
 - `internal/domain`: domain models.
 - `internal/repository`: PostgreSQL persistence.
 - `internal/service`: business rules and automation services.
 - `internal/httpserver`: HTTP handlers and template rendering.
+- `migrations`: versioned database migrations executed by the `migrate` service.
 - `templates`: HTML/CSS dashboard.
 
 ## Features

@@ -23,11 +23,22 @@ services:
         max-size: "50m"
         max-file: "7"
 
-  app:
-    build: .
+  migrate:
+    image: migrate/migrate:v4.17.1
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["migrate -path /migrations -database postgres://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}?sslmode=disable up"]
+    volumes:
+      - ./migrations:/migrations
     depends_on:
       db:
         condition: service_healthy
+    restart: "no"
+
+  app:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     env_file:
       - .env
     ports:
