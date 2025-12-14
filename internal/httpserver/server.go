@@ -83,6 +83,22 @@ func (server *Server) renderDashboard(responseWriter http.ResponseWriter, reques
         }
 }
 
+func (server *Server) renderDashboardWithPurchaseError(responseWriter http.ResponseWriter, request *http.Request, statusCode int, userFacingMessage string) {
+        responseWriter.WriteHeader(statusCode)
+        dashboardContext, dashboardError := server.buildDashboardViewModel(request.Context())
+        if dashboardError != nil {
+                log.Printf("Dashboard reload failed while handling purchase error: %v", dashboardError)
+                http.Error(responseWriter, userFacingMessage, statusCode)
+                return
+        }
+        dashboardContext.PurchaseErrorMessage = userFacingMessage
+        templateError := server.Templates.ExecuteTemplate(responseWriter, "index.html", dashboardContext)
+        if templateError != nil {
+                log.Printf("Template render error while showing purchase error: %v", templateError)
+                http.Error(responseWriter, userFacingMessage, statusCode)
+        }
+}
+
 func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, request *http.Request) {
         if request.Method != http.MethodPost {
                 responseWriter.WriteHeader(http.StatusMethodNotAllowed)
@@ -90,21 +106,23 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
         }
 
         if !server.CredentialService.HasValidBinanceCredentials() {
-            responseWriter.WriteHeader(http.StatusServiceUnavailable)
-            server.renderErrorPage(responseWriter, "Binance credentials are missing or invalid. Please provide a valid API Key and Secret Key to continue.")
-            return
+                responseWriter.WriteHeader(http.StatusServiceUnavailable)
+                server.renderErrorPage(responseWriter, "Binance credentials are missing or invalid. Please provide a valid API Key and Secret Key to continue.")
+                return
         }
 
         capitalThresholdText := request.FormValue("capital_threshold")
         capitalThreshold, capitalThresholdError := strconv.ParseFloat(capitalThresholdText, 64)
         if capitalThresholdError != nil {
-                http.Error(responseWriter, "Invalid capital threshold", http.StatusBadRequest)
+                log.Printf("Invalid capital threshold supplied: %v", capitalThresholdError)
+                server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Invalid capital threshold. Please provide a numeric value.")
                 return
         }
 
         targetProfitPercent, targetParseError := strconv.ParseFloat(request.FormValue("target_profit_percent"), 64)
         if targetParseError != nil {
-                http.Error(responseWriter, "Invalid profit percent", http.StatusBadRequest)
+                log.Printf("Invalid target profit percent supplied: %v", targetParseError)
+                server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Invalid profit percent. Please provide a numeric value.")
                 return
         }
 
@@ -114,17 +132,19 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
         currentPricePerUnit, priceLookupError := server.BinancePriceService.GetCurrentPrice(currentPriceContext, request.FormValue("trading_pair_symbol"))
         if priceLookupError != nil {
                 log.Printf("Could not fetch current price for purchase: %v", priceLookupError)
-                http.Error(responseWriter, "Could not fetch current price for the selected pair", http.StatusBadGateway)
+                server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Could not fetch current price for the selected pair. Please try again.")
                 return
         }
 
         if currentPricePerUnit <= 0 {
-                http.Error(responseWriter, "Current price is unavailable for this pair", http.StatusBadRequest)
+                log.Printf("Binance returned non-positive price for %s", request.FormValue("trading_pair_symbol"))
+                server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Current price is unavailable for this pair. Please try again later.")
                 return
         }
 
         if capitalThreshold <= 0 {
-                http.Error(responseWriter, "Capital threshold must be greater than zero", http.StatusBadRequest)
+                log.Printf("Capital threshold less than or equal to zero: %f", capitalThreshold)
+                server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Capital threshold must be greater than zero.")
                 return
         }
 
@@ -135,21 +155,22 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
         server.TradingScheduleService.UpdateTargetProfitPercent(targetProfitPercent)
         server.SettingsSummary.TargetProfitPercent = targetProfitPercent
 
-
         buyExecutionContext, buyCancel := context.WithTimeout(request.Context(), 10*time.Second)
         defer buyCancel()
 
         buyOrderResponse, buyError := server.BinanceTradingService.PlaceMarketBuyByQuote(buyExecutionContext, request.FormValue("trading_pair_symbol"), capitalThreshold)
         if buyError != nil {
                 server.logExecutionFailure(request.Context(), domain.TradingOperationTypeBuy, request.FormValue("trading_pair_symbol"), buyError)
-                http.Error(responseWriter, "Buy failed: "+buyError.Error(), http.StatusBadGateway)
+                log.Printf("Buy failed for %s: %v", request.FormValue("trading_pair_symbol"), buyError)
+                server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Buy failed: "+buyError.Error())
                 return
         }
 
         executedQuantity, executedQuantityError := strconv.ParseFloat(buyOrderResponse.ExecutedQty, 64)
         if executedQuantityError != nil || executedQuantity <= 0 {
                 server.logExecutionFailure(request.Context(), domain.TradingOperationTypeBuy, request.FormValue("trading_pair_symbol"), errors.New("Binance returned an invalid executed quantity"))
-                http.Error(responseWriter, "Buy failed: invalid executed quantity", http.StatusBadGateway)
+                log.Printf("Buy failed for %s due to invalid executed quantity: %v", request.FormValue("trading_pair_symbol"), executedQuantityError)
+                server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Buy failed: Binance returned an invalid executed quantity.")
                 return
         }
 
@@ -170,6 +191,7 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
         sellOrderResponse, sellError := server.BinanceTradingService.PlaceLimitSell(sellExecutionContext, request.FormValue("trading_pair_symbol"), executedQuantity, targetSellPricePerUnit)
         if sellError != nil {
                 server.logExecutionFailure(request.Context(), domain.TradingOperationTypeSell, request.FormValue("trading_pair_symbol"), sellError)
+                log.Printf("Sell order placement failed for %s: %v", request.FormValue("trading_pair_symbol"), sellError)
         }
 
         buyOrderID := strconv.FormatInt(buyOrderResponse.OrderID, 10)
@@ -202,7 +224,7 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
         server.logExecutionSuccess(request.Context(), domain.TradingOperationTypeBuy, operation.TradingPairSymbol, purchaseUnitPrice, executedQuantity, buyOrderID)
 
         if sellError != nil {
-                http.Error(responseWriter, "Sell order could not be created: "+sellError.Error(), http.StatusBadGateway)
+                server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Sell order could not be created: "+sellError.Error())
                 return
         }
 
@@ -416,21 +438,22 @@ func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, messag
 }
 
 type DashboardViewModel struct {
-        TradingOperations            []domain.TradingOperation
-        ExecutionHistory             []domain.TradingOperationExecution
-        IsBinanceConfigured          bool
-        BinanceAPIKeyMasked          string
-        BinanceAPISecretMasked       string
-        AutomaticSellIntervalMinutes int
-        DailyPurchaseIntervalMinutes int
-        BinanceAPIBaseURL            string
-        ApplicationBaseURL           string
-        TradingPairSymbol            string
-        CapitalThreshold             float64
-        TargetProfitPercent          float64
-        ActiveBinanceEnvironment     string
-        OpenOrders                   []service.BinanceOpenOrder
-        OpenOrdersError              string
+TradingOperations            []domain.TradingOperation
+ExecutionHistory             []domain.TradingOperationExecution
+IsBinanceConfigured          bool
+BinanceAPIKeyMasked          string
+BinanceAPISecretMasked       string
+AutomaticSellIntervalMinutes int
+DailyPurchaseIntervalMinutes int
+BinanceAPIBaseURL            string
+ApplicationBaseURL           string
+TradingPairSymbol            string
+CapitalThreshold             float64
+TargetProfitPercent          float64
+ActiveBinanceEnvironment     string
+OpenOrders                   []service.BinanceOpenOrder
+OpenOrdersError              string
+PurchaseErrorMessage         string
 }
 
 type BinanceSymbolsResponse struct {

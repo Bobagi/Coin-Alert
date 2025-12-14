@@ -118,6 +118,9 @@
                 <input id="target_profit_percent" name="target_profit_percent" type="number" step="0.01" min="0.01" value="{{printf "%.2f" .TargetProfitPercent}}" required>
                 <button type="submit">Save purchase</button>
             </form>
+            {{if .PurchaseErrorMessage}}
+            <div class="muted" style="color:#ef4444; margin-top:8px;">{{.PurchaseErrorMessage}}</div>
+            {{end}}
             <div style="margin-top:12px;">
                 <div class="muted">Active environment</div>
                 <div class="pill">{{.ActiveBinanceEnvironment}} • {{.BinanceAPIBaseURL}}</div>
