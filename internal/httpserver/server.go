@@ -434,9 +434,11 @@ func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, r
 }
 
 func (server *Server) buildDashboardViewModel(requestContext context.Context) (*DashboardViewModel, error) {
-	activeEnvironment := server.CredentialService.GetActiveEnvironmentConfiguration()
-	contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
-	defer cancel()
+        activeEnvironment := server.CredentialService.GetActiveEnvironmentConfiguration()
+
+        server.reconcileFilledSellOrders(requestContext)
+        contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
+        defer cancel()
 
 	tradingOperations, listError := server.TradingOperationService.ListOperations(contextWithTimeout, 100)
 	if listError != nil {
@@ -502,10 +504,10 @@ type DashboardViewModel struct {
 }
 
 type OperationHistoryViewModel struct {
-	ActiveBinanceEnvironment string
-	BinanceAPIBaseURL        string
-	OperationPageNumber      int
-	HasPreviousOperationPage bool
+        ActiveBinanceEnvironment string
+        BinanceAPIBaseURL        string
+        OperationPageNumber      int
+        HasPreviousOperationPage bool
 	HasNextOperationPage     bool
 	ExecutionPageNumber      int
 	HasPreviousExecutionPage bool
@@ -516,7 +518,143 @@ type OperationHistoryViewModel struct {
 }
 
 type BinanceSymbolsResponse struct {
-	Symbols []string `json:"symbols"`
+        Symbols []string `json:"symbols"`
+}
+
+func (server *Server) reconcileFilledSellOrders(requestContext context.Context) {
+        openOperationsContext, openOperationsCancel := context.WithTimeout(requestContext, 8*time.Second)
+        defer openOperationsCancel()
+
+        openOperations, openOperationsError := server.TradingOperationService.ListOpenOperations(openOperationsContext)
+        if openOperationsError != nil {
+                log.Printf("Could not fetch open operations for reconciliation: %v", openOperationsError)
+                return
+        }
+
+        for _, openOperation := range openOperations {
+                if openOperation.SellOrderIdentifier == nil {
+                        continue
+                }
+
+                statusContext, statusCancel := context.WithTimeout(requestContext, 6*time.Second)
+                sellStatus, sellStatusError := server.BinanceTradingService.GetOrderStatus(statusContext, openOperation.TradingPairSymbol, *openOperation.SellOrderIdentifier)
+                statusCancel()
+                if sellStatusError != nil {
+                        log.Printf("Could not fetch sell order status for operation %d: %v", openOperation.Identifier, sellStatusError)
+                        continue
+                }
+
+                if sellStatus.Status != "FILLED" {
+                        continue
+                }
+
+                sellPricePerUnit := server.resolveSellPricePerUnit(*sellStatus, openOperation.PurchasePricePerUnit)
+                markSoldContext, markSoldCancel := context.WithTimeout(requestContext, 5*time.Second)
+                markSoldError := server.TradingOperationService.MarkOperationAsSold(markSoldContext, openOperation.Identifier, sellPricePerUnit)
+                markSoldCancel()
+                if markSoldError != nil {
+                        log.Printf("Could not update operation %d as sold: %v", openOperation.Identifier, markSoldError)
+                        continue
+                }
+
+                sellOrderIdentifier := strconv.FormatInt(sellStatus.OrderID, 10)
+                server.logExecutionSuccess(requestContext, domain.TradingOperationTypeSell, openOperation.TradingPairSymbol, sellPricePerUnit, openOperation.QuantityPurchased, sellOrderIdentifier)
+                server.triggerReinvestmentAfterSale(requestContext, openOperation.TradingPairSymbol, openOperation.TargetProfitPercent)
+        }
+}
+
+func (server *Server) resolveSellPricePerUnit(sellStatus service.BinanceOrderStatus, fallbackPurchasePricePerUnit float64) float64 {
+        executedQuantity, executedQuantityError := strconv.ParseFloat(sellStatus.ExecutedQty, 64)
+        cumulativeQuoteValue, cumulativeQuoteError := strconv.ParseFloat(sellStatus.CumulativeQuote, 64)
+        if executedQuantityError == nil && cumulativeQuoteError == nil && executedQuantity > 0 && cumulativeQuoteValue > 0 {
+                return cumulativeQuoteValue / executedQuantity
+        }
+
+        parsedPrice, priceParseError := strconv.ParseFloat(sellStatus.Price, 64)
+        if priceParseError == nil && parsedPrice > 0 {
+                return parsedPrice
+        }
+
+        return fallbackPurchasePricePerUnit
+}
+
+func (server *Server) triggerReinvestmentAfterSale(requestContext context.Context, tradingPairSymbol string, targetProfitPercent float64) {
+        if server.SettingsSummary.CapitalThreshold <= 0 {
+                log.Printf("Skipping reinvestment because capital threshold is not configured")
+                return
+        }
+
+        reinvestmentContext, reinvestmentCancel := context.WithTimeout(requestContext, 10*time.Second)
+        buyResponse, buyError := server.BinanceTradingService.PlaceMarketBuyByQuote(reinvestmentContext, tradingPairSymbol, server.SettingsSummary.CapitalThreshold)
+        reinvestmentCancel()
+        if buyError != nil {
+                server.logExecutionFailure(requestContext, domain.TradingOperationTypeBuy, tradingPairSymbol, buyError)
+                log.Printf("Automatic reinvestment buy failed for %s: %v", tradingPairSymbol, buyError)
+                return
+        }
+
+        executedQuantity, executedQuantityError := strconv.ParseFloat(buyResponse.ExecutedQty, 64)
+        if executedQuantityError != nil || executedQuantity <= 0 {
+                server.logExecutionFailure(requestContext, domain.TradingOperationTypeBuy, tradingPairSymbol, errors.New("Binance returned an invalid executed quantity during reinvestment"))
+                log.Printf("Automatic reinvestment buy returned invalid quantity for %s: %v", tradingPairSymbol, executedQuantityError)
+                return
+        }
+
+        purchaseUnitPrice := server.calculatePurchasePricePerUnit(buyResponse.ExecutedQty, buyResponse.CumulativeQuote, buyResponse.Price)
+        if purchaseUnitPrice == 0 && executedQuantity > 0 {
+                purchaseUnitPrice = server.SettingsSummary.CapitalThreshold / executedQuantity
+        }
+        targetSellPricePerUnit := purchaseUnitPrice * (1 + (targetProfitPercent / 100))
+
+        sellContext, sellCancel := context.WithTimeout(requestContext, 10*time.Second)
+        sellResponse, sellError := server.BinanceTradingService.PlaceLimitSell(sellContext, tradingPairSymbol, executedQuantity, targetSellPricePerUnit)
+        sellCancel()
+        if sellError != nil {
+                server.logExecutionFailure(requestContext, domain.TradingOperationTypeSell, tradingPairSymbol, sellError)
+                log.Printf("Automatic reinvestment sell placement failed for %s: %v", tradingPairSymbol, sellError)
+        }
+
+        buyOrderIdentifier := strconv.FormatInt(buyResponse.OrderID, 10)
+        var sellOrderIdentifier *string
+        if sellResponse != nil {
+                sellIdentifier := strconv.FormatInt(sellResponse.OrderID, 10)
+                sellOrderIdentifier = &sellIdentifier
+                server.logExecutionSuccess(requestContext, domain.TradingOperationTypeSell, tradingPairSymbol, targetSellPricePerUnit, executedQuantity, sellIdentifier)
+        }
+
+        newOperation := domain.TradingOperation{
+                TradingPairSymbol:    tradingPairSymbol,
+                QuantityPurchased:    executedQuantity,
+                PurchasePricePerUnit: purchaseUnitPrice,
+                TargetProfitPercent:  targetProfitPercent,
+                BuyOrderIdentifier:   &buyOrderIdentifier,
+                SellOrderIdentifier:  sellOrderIdentifier,
+        }
+
+        recordContext, recordCancel := context.WithTimeout(requestContext, 5*time.Second)
+        _, recordError := server.TradingOperationService.RecordPurchaseOperation(recordContext, newOperation)
+        recordCancel()
+        if recordError != nil {
+                log.Printf("Could not record reinvested purchase for %s: %v", tradingPairSymbol, recordError)
+                return
+        }
+
+        server.logExecutionSuccess(requestContext, domain.TradingOperationTypeBuy, tradingPairSymbol, purchaseUnitPrice, executedQuantity, buyOrderIdentifier)
+}
+
+func (server *Server) calculatePurchasePricePerUnit(executedQuantityText string, cumulativeQuoteText string, priceText string) float64 {
+        executedQuantity, executedQuantityError := strconv.ParseFloat(executedQuantityText, 64)
+        cumulativeQuoteValue, cumulativeQuoteError := strconv.ParseFloat(cumulativeQuoteText, 64)
+        if executedQuantityError == nil && cumulativeQuoteError == nil && executedQuantity > 0 && cumulativeQuoteValue > 0 {
+                return cumulativeQuoteValue / executedQuantity
+        }
+
+        parsedPrice, priceParseError := strconv.ParseFloat(priceText, 64)
+        if priceParseError == nil && parsedPrice > 0 {
+                return parsedPrice
+        }
+
+        return 0
 }
 
 func (server *Server) handleHealthCheck(responseWriter http.ResponseWriter, request *http.Request) {

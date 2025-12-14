@@ -33,11 +33,20 @@ type binanceOrderResponse struct {
 }
 
 type BinanceOpenOrder struct {
-	OrderID int64  `json:"orderId"`
-	Symbol  string `json:"symbol"`
-	Price   string `json:"price"`
-	Side    string `json:"side"`
-	Status  string `json:"status"`
+        OrderID int64  `json:"orderId"`
+        Symbol  string `json:"symbol"`
+        Price   string `json:"price"`
+        Side    string `json:"side"`
+        Status  string `json:"status"`
+}
+
+type BinanceOrderStatus struct {
+        OrderID         int64  `json:"orderId"`
+        Symbol          string `json:"symbol"`
+        Status          string `json:"status"`
+        ExecutedQty     string `json:"executedQty"`
+        Price           string `json:"price"`
+        CumulativeQuote string `json:"cummulativeQuoteQty"`
 }
 
 func NewBinanceTradingService(environmentConfiguration domain.BinanceEnvironmentConfiguration) *BinanceTradingService {
@@ -177,7 +186,47 @@ func (service *BinanceTradingService) ListOpenOrders(requestContext context.Cont
 		return nil, decodeError
 	}
 
-	return parsedResponse, nil
+        return parsedResponse, nil
+}
+
+func (service *BinanceTradingService) GetOrderStatus(requestContext context.Context, tradingPairSymbol string, orderIdentifier string) (*BinanceOrderStatus, error) {
+        requestParameters := url.Values{}
+        requestParameters.Set("symbol", tradingPairSymbol)
+        requestParameters.Set("orderId", orderIdentifier)
+        requestParameters.Set("timestamp", strconv.FormatInt(time.Now().UnixMilli(), 10))
+
+        signedEndpoint, signingError := service.buildSignedEndpoint("/api/v3/order", requestParameters)
+        if signingError != nil {
+                return nil, signingError
+        }
+
+        orderRequest, requestBuildError := http.NewRequestWithContext(requestContext, http.MethodGet, signedEndpoint, nil)
+        if requestBuildError != nil {
+                return nil, requestBuildError
+        }
+        orderRequest.Header.Set("X-MBX-APIKEY", service.EnvironmentConfiguration.APIKey)
+
+        orderResponse, responseError := service.HTTPClient.Do(orderRequest)
+        if responseError != nil {
+                return nil, responseError
+        }
+        defer orderResponse.Body.Close()
+
+        if orderResponse.StatusCode != http.StatusOK {
+            return nil, fmt.Errorf("Binance rejected order status request (status %d)", orderResponse.StatusCode)
+        }
+
+        var parsedResponse BinanceOrderStatus
+        decodeError := json.NewDecoder(orderResponse.Body).Decode(&parsedResponse)
+        if decodeError != nil {
+                return nil, decodeError
+        }
+
+        if parsedResponse.OrderID == 0 {
+                return nil, fmt.Errorf("Binance did not return an orderId for the order status request")
+        }
+
+        return &parsedResponse, nil
 }
 
 func (service *BinanceTradingService) buildSignedEndpoint(path string, parameters url.Values) (string, error) {

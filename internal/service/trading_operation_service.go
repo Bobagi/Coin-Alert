@@ -87,7 +87,11 @@ func (service *TradingOperationService) CloseOperationsThatReachedTargetPrice(co
 }
 
 func (service *TradingOperationService) ListOpenOperations(contextWithTimeout context.Context) ([]domain.TradingOperation, error) {
-	return service.TradingOperationRepository.ListOpenOperations(contextWithTimeout)
+        return service.TradingOperationRepository.ListOpenOperations(contextWithTimeout)
+}
+
+func (service *TradingOperationService) MarkOperationAsSold(contextWithTimeout context.Context, operationIdentifier int64, sellPricePerUnit float64) error {
+        return service.TradingOperationRepository.UpdateOperationAsSold(contextWithTimeout, operationIdentifier, sellPricePerUnit)
 }
 
 func (service *TradingOperationService) FindOldestOpenOperationForPair(contextWithTimeout context.Context, tradingPairSymbol string) (*domain.TradingOperation, error) {
