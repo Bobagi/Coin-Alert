@@ -1,132 +1,137 @@
 package service
 
 import (
-	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
+        "context"
+        "crypto/hmac"
+        "crypto/sha256"
+        "encoding/hex"
+        "encoding/json"
+        "errors"
+        "fmt"
+        "io"
+        "net/http"
+        "net/url"
+        "strings"
+        "time"
 )
 
-const binanceAccountEndpointPath = "/api/v3/account"
-const binanceTimeEndpointPath = "/api/v3/time"
-
 type BinanceCredentialValidator struct {
-	APIBaseURL string
-	HTTPClient *http.Client
+        APIBaseURL string
+        HTTPClient *http.Client
 }
 
 func NewBinanceCredentialValidator(apiBaseURL string) *BinanceCredentialValidator {
-	sanitizedBaseURL := strings.TrimRight(apiBaseURL, "/")
-	if sanitizedBaseURL == "" {
-		sanitizedBaseURL = "https://api.binance.com"
-	}
+        return &BinanceCredentialValidator{APIBaseURL: apiBaseURL, HTTPClient: &http.Client{Timeout: 8 * time.Second}}
+}
 
-	return &BinanceCredentialValidator{
-		APIBaseURL: sanitizedBaseURL,
-		HTTPClient: &http.Client{Timeout: 8 * time.Second},
-	}
+func (validator *BinanceCredentialValidator) UpdateAPIBaseURL(newBaseURL string) {
+        validator.APIBaseURL = newBaseURL
 }
 
 func (validator *BinanceCredentialValidator) ValidateCredentials(validationContext context.Context, apiKey string, apiSecret string) error {
-	if strings.TrimSpace(apiKey) == "" || strings.TrimSpace(apiSecret) == "" {
-		return errors.New("Binance API Key and Secret Key are required")
-	}
+        if validator == nil {
+                return errors.New("Binance credential validator is not configured")
+        }
 
-	if len(apiKey) < 10 || len(apiSecret) < 10 {
-		return errors.New("Credentials are too short. Please verify the API Key and Secret Key")
-	}
+        if strings.TrimSpace(apiKey) == "" || strings.TrimSpace(apiSecret) == "" {
+                return errors.New("Binance API Key and Secret Key are required")
+        }
 
-	serverTimestamp, serverTimeError := validator.fetchBinanceServerTimestamp(validationContext)
-	if serverTimeError != nil {
-		return serverTimeError
-	}
+        serverTimestamp, serverTimeError := validator.fetchBinanceServerTimestamp(validationContext)
+        if serverTimeError != nil {
+                return serverTimeError
+        }
 
-	accountRequest, requestBuildError := validator.buildSignedAccountRequest(validationContext, apiKey, apiSecret, serverTimestamp)
-	if requestBuildError != nil {
-		return requestBuildError
-	}
+        signedRequest, signingError := validator.buildSignedAccountRequest(validationContext, apiKey, apiSecret, serverTimestamp)
+        if signingError != nil {
+                return signingError
+        }
 
-	binanceResponse, binanceResponseError := validator.HTTPClient.Do(accountRequest)
-	if binanceResponseError != nil {
-		return binanceResponseError
-	}
-	defer binanceResponse.Body.Close()
+        binanceResponse, responseError := validator.HTTPClient.Do(signedRequest)
+        if responseError != nil {
+                return responseError
+        }
+        defer binanceResponse.Body.Close()
 
-	if binanceResponse.StatusCode != http.StatusOK {
-		responseBody, readError := io.ReadAll(binanceResponse.Body)
-		if readError != nil {
-			return fmt.Errorf("Binance rejected the credentials at %s (status %d)", validator.APIBaseURL+binanceAccountEndpointPath, binanceResponse.StatusCode)
-		}
-		return fmt.Errorf("Binance rejected the credentials at %s (status %d): %s", validator.APIBaseURL+binanceAccountEndpointPath, binanceResponse.StatusCode, string(responseBody))
-	}
+        if binanceResponse.StatusCode != http.StatusOK {
+                responseBody, _ := io.ReadAll(binanceResponse.Body)
+                if len(responseBody) == 0 {
+                        return fmt.Errorf("Binance rejected the credentials at %s (status %d)", validator.APIBaseURL+binanceAccountEndpointPath, binanceResponse.StatusCode)
+                }
+                return fmt.Errorf("Binance rejected the credentials at %s (status %d): %s", validator.APIBaseURL+binanceAccountEndpointPath, binanceResponse.StatusCode, string(responseBody))
+        }
 
-	return nil
+        return nil
 }
 
 func (validator *BinanceCredentialValidator) buildSignedAccountRequest(requestContext context.Context, apiKey string, apiSecret string, serverTimestamp int64) (*http.Request, error) {
-	queryValues := url.Values{}
-	queryValues.Set("timestamp", fmt.Sprintf("%d", serverTimestamp))
-	queryValues.Set("recvWindow", "5000")
-	unsignedQuery := queryValues.Encode()
+        accountEndpoint, parseError := url.Parse(validator.APIBaseURL)
+        if parseError != nil {
+                return nil, parseError
+        }
+        accountEndpoint.Path = binanceAccountEndpointPath
 
-	signatureSigner := hmac.New(sha256.New, []byte(apiSecret))
-	_, signingError := signatureSigner.Write([]byte(unsignedQuery))
-	if signingError != nil {
-		return nil, signingError
-	}
-	signature := hex.EncodeToString(signatureSigner.Sum(nil))
+        parameters := accountEndpoint.Query()
+        parameters.Set("timestamp", fmt.Sprintf("%d", serverTimestamp))
 
-	signedQuery := unsignedQuery + "&signature=" + signature
-	signedEndpoint := validator.APIBaseURL + binanceAccountEndpointPath + "?" + signedQuery
+        signature := computeHMACSignature(parameters.Encode(), apiSecret)
+        parameters.Set("signature", signature)
+        accountEndpoint.RawQuery = parameters.Encode()
 
-	accountRequest, requestError := http.NewRequestWithContext(requestContext, http.MethodGet, signedEndpoint, nil)
-	if requestError != nil {
-		return nil, requestError
-	}
+        signedRequest, buildError := http.NewRequestWithContext(requestContext, http.MethodGet, accountEndpoint.String(), nil)
+        if buildError != nil {
+                return nil, buildError
+        }
 
-	accountRequest.Header.Set("X-MBX-APIKEY", apiKey)
-	return accountRequest, nil
-}
-
-type binanceServerTimeResponse struct {
-	ServerTime int64 `json:"serverTime"`
+        signedRequest.Header.Set("X-MBX-APIKEY", apiKey)
+        return signedRequest, nil
 }
 
 func (validator *BinanceCredentialValidator) fetchBinanceServerTimestamp(requestContext context.Context) (int64, error) {
-	serverTimeEndpoint := validator.APIBaseURL + binanceTimeEndpointPath
+        timeEndpoint, parseError := url.Parse(validator.APIBaseURL)
+        if parseError != nil {
+                return 0, parseError
+        }
+        timeEndpoint.Path = binanceTimeEndpointPath
 
-	timeRequest, requestCreationError := http.NewRequestWithContext(requestContext, http.MethodGet, serverTimeEndpoint, nil)
-	if requestCreationError != nil {
-		return 0, requestCreationError
-	}
+        timeRequest, requestBuildError := http.NewRequestWithContext(requestContext, http.MethodGet, timeEndpoint.String(), nil)
+        if requestBuildError != nil {
+                return 0, requestBuildError
+        }
 
-	timeResponse, timeResponseError := validator.HTTPClient.Do(timeRequest)
-	if timeResponseError != nil {
-		return 0, timeResponseError
-	}
-	defer timeResponse.Body.Close()
+        timeResponse, timeError := validator.HTTPClient.Do(timeRequest)
+        if timeError != nil {
+                return 0, timeError
+        }
+        defer timeResponse.Body.Close()
 
-	if timeResponse.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("Binance time endpoint returned status %d", timeResponse.StatusCode)
-	}
+        if timeResponse.StatusCode != http.StatusOK {
+                return 0, fmt.Errorf("Binance time endpoint returned status %d", timeResponse.StatusCode)
+        }
 
-	var serverTimePayload binanceServerTimeResponse
-	decodeError := json.NewDecoder(timeResponse.Body).Decode(&serverTimePayload)
-	if decodeError != nil {
-		return 0, decodeError
-	}
+        var timePayload struct {
+                ServerTime int64 `json:"serverTime"`
+        }
 
-	if serverTimePayload.ServerTime == 0 {
-		return 0, errors.New("Binance time endpoint returned an empty timestamp")
-	}
+        decodeError := json.NewDecoder(timeResponse.Body).Decode(&timePayload)
+        if decodeError != nil {
+                return 0, decodeError
+        }
 
-	return serverTimePayload.ServerTime, nil
+        if timePayload.ServerTime == 0 {
+                return 0, errors.New("Binance time endpoint returned an empty timestamp")
+        }
+
+        return timePayload.ServerTime, nil
 }
+
+func computeHMACSignature(message string, secret string) string {
+        mac := hmac.New(sha256.New, []byte(secret))
+        mac.Write([]byte(message))
+        return hex.EncodeToString(mac.Sum(nil))
+}
+
+const (
+        binanceAccountEndpointPath = "/api/v3/account"
+        binanceTimeEndpointPath    = "/api/v3/time"
+)

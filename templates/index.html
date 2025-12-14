@@ -15,7 +15,7 @@
         .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
         h2 { margin-top: 0; }
         label { display: block; margin-bottom: 4px; font-weight: 600; }
-        input, textarea { width: 100%; padding: 10px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; }
+        input, textarea, select { width: 100%; padding: 10px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; }
         button { background: linear-gradient(120deg, #22c55e, #16a34a); border: none; padding: 12px 16px; border-radius: 10px; color: white; font-weight: 700; cursor: pointer; width: 100%; }
         button.secondary { background: linear-gradient(120deg, #ef4444, #dc2626); }
         .transactions { max-height: 420px; overflow-y: auto; }
@@ -45,6 +45,7 @@
 <header>
     <h1>Coin Alert • Trades and Alerts</h1>
     <p>Rewritten in Go with SOLID boundaries, automation, and safer credentials.</p>
+    <div class="pill" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.3);">Binance: {{.ActiveBinanceEnvironment}} • {{.BinanceAPIBaseURL}}</div>
 </header>
 <div class="container">
     <div class="grid">
@@ -52,11 +53,28 @@
             <h2>Binance Credentials</h2>
             <p class="muted">Apply your API Key and Secret Key to enable automations and trades.</p>
             <form action="/settings/binance" method="post">
+                <label for="binance_environment">Binance environment</label>
+                <select id="binance_environment" name="binance_environment">
+                    <option value="TESTNET" {{if eq .ActiveBinanceEnvironment "TESTNET"}}selected{{end}}>Testnet</option>
+                    <option value="PRODUCTION" {{if eq .ActiveBinanceEnvironment "PRODUCTION"}}selected{{end}}>Production</option>
+                </select>
                 <label for="binance_api_key">API Key</label>
                 <input id="binance_api_key" name="binance_api_key" type="text" placeholder="Paste your API Key" required>
                 <label for="binance_api_secret">Secret Key</label>
                 <input id="binance_api_secret" name="binance_api_secret" type="password" placeholder="Paste your Secret Key" required>
                 <button type="submit">Save credentials</button>
+            </form>
+            <form action="/settings/binance/environment" method="post" style="margin-top:12px; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+                <div style="flex:1; min-width:160px;">
+                    <label for="environment_toggle">Active environment</label>
+                    <select id="environment_toggle" name="binance_environment">
+                        <option value="TESTNET" {{if eq .ActiveBinanceEnvironment "TESTNET"}}selected{{end}}>Testnet</option>
+                        <option value="PRODUCTION" {{if eq .ActiveBinanceEnvironment "PRODUCTION"}}selected{{end}}>Production</option>
+                    </select>
+                </div>
+                <div style="flex:1; min-width:140px; align-self:flex-end;">
+                    <button type="submit" style="width:100%;">Switch environment</button>
+                </div>
             </form>
             <div class="row" style="margin-top: 12px;">
                 <div>
@@ -100,46 +118,24 @@
                 <input id="target_profit_percent" name="target_profit_percent" type="number" step="0.01" min="0.01" value="{{printf "%.2f" .TargetProfitPercent}}" required>
                 <button type="submit">Save purchase</button>
             </form>
+            <div style="margin-top:12px;">
+                <div class="muted">Active environment</div>
+                <div class="pill">{{.ActiveBinanceEnvironment}} • {{.BinanceAPIBaseURL}}</div>
+            </div>
         </div>
         <div class="card">
             <h2>Send email alert</h2>
             <form action="/alerts/email" method="post">
                 <label for="recipient_address">Recipient</label>
-                <input id="recipient_address" name="recipient_address" type="email" placeholder="user@domain.com" required>
+                <input id="recipient_address" name="recipient_address" type="email" placeholder="user@example.com" required>
                 <label for="alert_trading_pair_symbol">Trading pair or currency</label>
-                <input id="alert_trading_pair_symbol" name="alert_trading_pair_symbol" placeholder="E.g. BTCUSDT or BTC" required>
-                <label for="alert_threshold">Threshold value</label>
-                <input id="alert_threshold" name="alert_threshold" type="number" step="0.01" min="0.01" placeholder="Price to watch" required>
+                <input id="alert_trading_pair_symbol" name="alert_trading_pair_symbol" type="text" placeholder="BTCUSDT" required>
+                <label for="alert_threshold">Threshold</label>
+                <input id="alert_threshold" name="alert_threshold" type="number" step="0.0001" placeholder="Price trigger" required>
                 <button type="submit">Send alert</button>
             </form>
-        </div>
-    </div>
-    <div class="card" style="margin-top: 20px;">
-        <h2>Automation configuration</h2>
-        <p class="muted">Single trading pair with shared capital and profit rules.</p>
-        <div class="row">
-            <div>
-                <div class="muted">Trading pair</div>
-                <div class="pill">{{.TradingPairSymbol}}</div>
-            </div>
-            <div>
-                <div class="muted">Capital threshold</div>
-                <div class="pill">{{printf "%.2f" .CapitalThreshold}}</div>
-            </div>
-        </div>
-        <div class="row" style="margin-top: 12px;">
-            <div>
-                <div class="muted">Profit target (%)</div>
-                <div class="pill">{{printf "%.2f" .TargetProfitPercent}}</div>
-            </div>
-            <div>
-                <div class="muted">Automatic sell interval (minutes)</div>
-                <div class="pill">{{.AutomaticSellIntervalMinutes}}</div>
-            </div>
-        </div>
-        <div class="row" style="margin-top: 12px;">
-            <div>
-                <div class="muted">Binance API base URL</div>
+            <div class="notes">
+                <div class="muted">Binance base URL</div>
                 <div class="pill">{{.BinanceAPIBaseURL}}</div>
             </div>
             <div>
@@ -150,67 +146,28 @@
     </div>
     <div class="grid" style="margin-top: 20px;">
         <div class="card">
-            <h2>Next scheduled operation</h2>
-            {{if .NextScheduledOperation}}
-            <p class="muted">This operation is persisted and will execute automatically or on demand.</p>
-            <div class="row">
-                <div>
-                    <div class="muted">Type</div>
-                    <div class="pill">{{.NextScheduledOperation.OperationType}}</div>
-                </div>
-                <div>
-                    <div class="muted">Pair</div>
-                    <div class="pill">{{.NextScheduledOperation.TradingPairSymbol}}</div>
-                </div>
-            </div>
-            <div class="row" style="margin-top:12px;">
-                <div>
-                    <div class="muted">Capital threshold</div>
-                    <div class="pill">{{printf "%.2f" .NextScheduledOperation.CapitalThreshold}}</div>
-                </div>
-                <div>
-                    <div class="muted">Target profit (%)</div>
-                    <div class="pill">{{printf "%.2f" .NextScheduledOperation.TargetProfitPercent}}</div>
-                </div>
-            </div>
-            <div class="row" style="margin-top:12px;">
-                <div>
-                    <div class="muted">Scheduled time</div>
-                    <div class="pill">{{.NextScheduledOperation.ScheduledExecutionTime}}</div>
-                </div>
-                <div>
-                    <div class="muted">Status</div>
-                    <div class="pill">{{.NextScheduledOperation.Status}}</div>
-                </div>
-            </div>
-            <form action="/operations/execute-next" method="post" style="margin-top:16px;">
-                <button type="submit">Execute next operation now</button>
-            </form>
-            {{else}}
-            <p class="muted">No scheduled operation is registered yet. A new one will be created on the next purchase or automation cycle.</p>
-            {{end}}
-        </div>
-        <div class="card">
-            <h2>Scheduled operations</h2>
-            {{if .ScheduledOperations}}
-            <div class="transactions">
-                {{range .ScheduledOperations}}
-                <div class="transaction-item">
-                    <div>
-                        <div><strong>{{.OperationType}}</strong> on {{.TradingPairSymbol}}</div>
-                        <div class="muted">Scheduled: {{.ScheduledExecutionTime}}</div>
-                        <div class="muted">Threshold: {{printf "%.2f" .CapitalThreshold}} • Target: {{printf "%.2f" .TargetProfitPercent}}%</div>
+            <h2>Open orders (Binance)</h2>
+            {{if .OpenOrdersError}}
+                <p class="muted" style="color:#ef4444;">{{.OpenOrdersError}}</p>
+            {{else if gt (len .OpenOrders) 0}}
+                <div class="transactions">
+                    {{range .OpenOrders}}
+                    <div class="transaction-item">
+                        <div>
+                            <div><strong>{{.Side}}</strong> on {{.Symbol}}</div>
+                            <div class="muted">Price: {{.Price}}</div>
+                            <div class="muted">Status: {{.Status}}</div>
+                        </div>
+                        <div class="badge" style="background:rgba(99,102,241,0.15); color:#a5b4fc;">Order {{.OrderID}}</div>
                     </div>
-                    <div class="badge" style="background:rgba(99,102,241,0.15); color:#a5b4fc;">{{.Status}}</div>
+                    {{end}}
                 </div>
-                {{end}}
-            </div>
             {{else}}
-            <p class="muted">No pending operations.</p>
+                <p class="muted">No open Binance orders for the active pair.</p>
             {{end}}
         </div>
         <div class="card">
-            <h2>Execution history</h2>
+            <h2>Recent executions</h2>
             {{if .ExecutionHistory}}
             <div class="transactions">
                 {{range .ExecutionHistory}}
@@ -218,6 +175,9 @@
                     <div>
                         <div><strong>{{.OperationType}}</strong> on {{.TradingPairSymbol}}</div>
                         <div class="muted">Executed at {{.ExecutedAt}}</div>
+                        {{if .OrderIdentifier}}
+                        <div class="muted">Order ID: {{.OrderIdentifier}}</div>
+                        {{end}}
                         <div class="muted">Unit: {{printf "%.6f" .UnitPrice}} • Qty: {{printf "%.6f" .Quantity}} • Total: {{printf "%.2f" .TotalValue}}</div>
                         {{if .ErrorMessage}}
                         <div class="muted" style="color:#ef4444;">Error: {{.ErrorMessage}}</div>
@@ -235,11 +195,9 @@
             <p class="muted">No executions recorded yet.</p>
             {{end}}
         </div>
-    </div>
-    <div class="card" style="margin-top: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="card">
             <h2>Recent operations</h2>
-            <div style="display:flex; align-items:center; gap:12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div class="loading-indicator" x-show="isRefreshingTransactions" x-transition>
                     <span class="loading-dot"></span>
                     <span>Refreshing...</span>
@@ -249,12 +207,12 @@
                     <span x-show="isRefreshingTransactions">Please wait...</span>
                 </button>
             </div>
+            <div class="transactions" id="transactions-list">
+                {{template "partials/transactions.html" .TradingOperations}}
+            </div>
+            <p class="muted" x-show="lastTransactionsRefreshMessage" x-text="lastTransactionsRefreshMessage" style="margin-top:8px;"></p>
+            <p class="muted" x-show="transactionsRefreshError" x-text="transactionsRefreshError" style="margin-top:8px; color:#ef4444;"></p>
         </div>
-        <div class="transactions" id="transactions-list">
-            {{template "partials/transactions.html" .TradingOperations}}
-        </div>
-        <p class="muted" x-show="lastTransactionsRefreshMessage" x-text="lastTransactionsRefreshMessage" style="margin-top:8px;"></p>
-        <p class="muted" x-show="transactionsRefreshError" x-text="transactionsRefreshError" style="margin-top:8px; color:#ef4444;"></p>
     </div>
 </div>
 <script>

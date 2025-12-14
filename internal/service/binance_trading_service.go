@@ -11,32 +11,42 @@ import (
         "net/url"
         "strconv"
         "time"
+
+        "coin-alert/internal/domain"
 )
 
 type BinanceTradingService struct {
-        EnvironmentConfiguration BinanceEnvironmentConfiguration
+        EnvironmentConfiguration domain.BinanceEnvironmentConfiguration
         HTTPClient               *http.Client
 }
 
 type binanceOrderResponse struct {
-        OrderID        int64  `json:"orderId"`
-        Symbol         string `json:"symbol"`
-        ExecutedQty    string `json:"executedQty"`
-        Price          string `json:"price"`
-        Status         string `json:"status"`
-        ClientOrderID  string `json:"clientOrderId"`
-        TransactTime   int64  `json:"transactTime"`
+        OrderID         int64  `json:"orderId"`
+        Symbol          string `json:"symbol"`
+        ExecutedQty     string `json:"executedQty"`
+        Price           string `json:"price"`
+        Status          string `json:"status"`
+        ClientOrderID   string `json:"clientOrderId"`
+        TransactTime    int64  `json:"transactTime"`
         CumulativeQuote string `json:"cummulativeQuoteQty"`
 }
 
-func NewBinanceTradingService(environmentConfiguration BinanceEnvironmentConfiguration) *BinanceTradingService {
+type BinanceOpenOrder struct {
+        OrderID int64  `json:"orderId"`
+        Symbol  string `json:"symbol"`
+        Price   string `json:"price"`
+        Side    string `json:"side"`
+        Status  string `json:"status"`
+}
+
+func NewBinanceTradingService(environmentConfiguration domain.BinanceEnvironmentConfiguration) *BinanceTradingService {
         return &BinanceTradingService{
                 EnvironmentConfiguration: environmentConfiguration,
                 HTTPClient:               &http.Client{Timeout: 10 * time.Second},
         }
 }
 
-func (service *BinanceTradingService) UpdateEnvironmentConfiguration(newConfiguration BinanceEnvironmentConfiguration) {
+func (service *BinanceTradingService) UpdateEnvironmentConfiguration(newConfiguration domain.BinanceEnvironmentConfiguration) {
         service.EnvironmentConfiguration = newConfiguration
 }
 
@@ -124,6 +134,41 @@ func (service *BinanceTradingService) PlaceLimitSell(requestContext context.Cont
         }
 
         return &parsedResponse, nil
+}
+
+func (service *BinanceTradingService) ListOpenOrders(requestContext context.Context, tradingPairSymbol string) ([]BinanceOpenOrder, error) {
+        requestParameters := url.Values{}
+        requestParameters.Set("symbol", tradingPairSymbol)
+        requestParameters.Set("timestamp", strconv.FormatInt(time.Now().UnixMilli(), 10))
+
+        signedEndpoint, signingError := service.buildSignedEndpoint("/api/v3/openOrders", requestParameters)
+        if signingError != nil {
+                return nil, signingError
+        }
+
+        request, requestBuildError := http.NewRequestWithContext(requestContext, http.MethodGet, signedEndpoint, nil)
+        if requestBuildError != nil {
+                return nil, requestBuildError
+        }
+        request.Header.Set("X-MBX-APIKEY", service.EnvironmentConfiguration.APIKey)
+
+        response, responseError := service.HTTPClient.Do(request)
+        if responseError != nil {
+                return nil, responseError
+        }
+        defer response.Body.Close()
+
+        if response.StatusCode != http.StatusOK {
+                return nil, fmt.Errorf("Binance rejected open orders request (status %d)", response.StatusCode)
+        }
+
+        var parsedResponse []BinanceOpenOrder
+        decodeError := json.NewDecoder(response.Body).Decode(&parsedResponse)
+        if decodeError != nil {
+                return nil, decodeError
+        }
+
+        return parsedResponse, nil
 }
 
 func (service *BinanceTradingService) buildSignedEndpoint(path string, parameters url.Values) (string, error) {

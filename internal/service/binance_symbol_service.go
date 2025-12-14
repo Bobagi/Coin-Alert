@@ -7,40 +7,42 @@ import (
         "net/http"
         "strings"
         "time"
+
+        "coin-alert/internal/domain"
 )
 
 type BinanceSymbolService struct {
-        SymbolEndpoint string
-        HTTPClient     *http.Client
-        CacheDuration  time.Duration
-        cachedSymbols  []string
-        lastFetchTime  time.Time
+        EnvironmentConfiguration domain.BinanceEnvironmentConfiguration
+        HTTPClient               *http.Client
+        cachedSymbols            []string
+        lastFetchTimestamp       time.Time
 }
 
 type binanceExchangeInfoResponse struct {
-    Symbols []binanceSymbol `json:"symbols"`
+        Symbols []struct {
+                Symbol                     string `json:"symbol"`
+                Status                     string `json:"status"`
+                IsSpotTradingAllowed       bool   `json:"isSpotTradingAllowed"`
+                IsMarginTradingAllowed     bool   `json:"isMarginTradingAllowed"`
+                QuoteAsset                 string `json:"quoteAsset"`
+                BaseAsset                  string `json:"baseAsset"`
+                QuoteAssetPrecision        int    `json:"quoteAssetPrecision"`
+                BaseAssetPrecision         int    `json:"baseAssetPrecision"`
+                QuotePrecision             int    `json:"quotePrecision"`
+                OrderTypes                 []string `json:"orderTypes"`
+                Permissions                []string `json:"permissions"`
+        } `json:"symbols"`
 }
 
-type binanceSymbol struct {
-    Symbol string `json:"symbol"`
-    Status string `json:"status"`
-}
-
-func NewBinanceSymbolService(binanceAPIBaseURL string) *BinanceSymbolService {
-        sanitizedBaseURL := strings.TrimRight(binanceAPIBaseURL, "/")
-        if sanitizedBaseURL == "" {
-                sanitizedBaseURL = "https://api.binance.com"
-        }
-
+func NewBinanceSymbolService(environmentConfiguration domain.BinanceEnvironmentConfiguration) *BinanceSymbolService {
         return &BinanceSymbolService{
-                SymbolEndpoint: sanitizedBaseURL + "/api/v3/exchangeInfo",
-                HTTPClient: &http.Client{
-                        Timeout: 6 * time.Second,
-                },
-                CacheDuration: 10 * time.Minute,
-                cachedSymbols: []string{},
-                lastFetchTime: time.Time{},
+                EnvironmentConfiguration: environmentConfiguration,
+                HTTPClient:               &http.Client{Timeout: 8 * time.Second},
         }
+}
+
+func (service *BinanceSymbolService) UpdateEnvironmentConfiguration(newConfiguration domain.BinanceEnvironmentConfiguration) {
+        service.EnvironmentConfiguration = newConfiguration
 }
 
 func (service *BinanceSymbolService) FetchAvailableSymbols(fetchContext context.Context) ([]string, error) {
@@ -48,14 +50,15 @@ func (service *BinanceSymbolService) FetchAvailableSymbols(fetchContext context.
                 return service.cachedSymbols, nil
         }
 
-        request, creationError := http.NewRequestWithContext(fetchContext, http.MethodGet, service.SymbolEndpoint, nil)
-        if creationError != nil {
-                return nil, creationError
+        exchangeInfoEndpoint := service.EnvironmentConfiguration.RESTBaseURL + "/api/v3/exchangeInfo"
+        exchangeInfoRequest, requestError := http.NewRequestWithContext(fetchContext, http.MethodGet, exchangeInfoEndpoint, nil)
+        if requestError != nil {
+                return nil, requestError
         }
 
-        response, httpError := service.HTTPClient.Do(request)
-        if httpError != nil {
-                return nil, httpError
+        response, responseError := service.HTTPClient.Do(exchangeInfoRequest)
+        if responseError != nil {
+                return nil, responseError
         }
         defer response.Body.Close()
 
@@ -69,26 +72,22 @@ func (service *BinanceSymbolService) FetchAvailableSymbols(fetchContext context.
                 return nil, decodeError
         }
 
-        filteredSymbols := service.extractTradableSymbols(exchangeInformation)
-        service.cachedSymbols = filteredSymbols
-        service.lastFetchTime = time.Now()
+        tradableSymbols := service.extractTradableSymbols(exchangeInformation)
+        service.cachedSymbols = tradableSymbols
+        service.lastFetchTimestamp = time.Now()
 
-        return filteredSymbols, nil
+        return tradableSymbols, nil
 }
 
 func (service *BinanceSymbolService) cachedSymbolsAvailable() bool {
-        if len(service.cachedSymbols) == 0 {
-                return false
-        }
-
-        return time.Since(service.lastFetchTime) < service.CacheDuration
+        return len(service.cachedSymbols) > 0 && time.Since(service.lastFetchTimestamp) < 10*time.Minute
 }
 
 func (service *BinanceSymbolService) extractTradableSymbols(exchangeInformation binanceExchangeInfoResponse) []string {
-        tradableSymbols := []string{}
-        for _, symbolDetails := range exchangeInformation.Symbols {
-                if symbolDetails.Status == "TRADING" {
-                        tradableSymbols = append(tradableSymbols, symbolDetails.Symbol)
+        var tradableSymbols []string
+        for _, symbol := range exchangeInformation.Symbols {
+                if strings.EqualFold(symbol.Status, "TRADING") && symbol.IsSpotTradingAllowed {
+                        tradableSymbols = append(tradableSymbols, symbol.Symbol)
                 }
         }
         return tradableSymbols

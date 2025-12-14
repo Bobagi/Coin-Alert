@@ -22,11 +22,11 @@ func NewPostgresTradingOperationExecutionRepository(database *sql.DB) *PostgresT
 }
 
 func (repository *PostgresTradingOperationExecutionRepository) LogExecution(contextWithTimeout context.Context, execution domain.TradingOperationExecution) (int64, error) {
-        insertSQL := `INSERT INTO trading_operation_executions(scheduled_operation_id, trading_pair_symbol, operation_type, unit_price, quantity, total_value, executed_at, success, error_message) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, created_at, updated_at`
+        insertSQL := `INSERT INTO trading_operation_executions(scheduled_operation_id, trading_pair_symbol, operation_type, unit_price, quantity, total_value, executed_at, success, error_message, order_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, created_at, updated_at`
         statementContext, statementCancel := context.WithTimeout(contextWithTimeout, 5*time.Second)
         defer statementCancel()
 
-        row := repository.Database.QueryRowContext(statementContext, insertSQL, execution.ScheduledOperationID, execution.TradingPairSymbol, execution.OperationType, execution.UnitPrice, execution.Quantity, execution.TotalValue, execution.ExecutedAt, execution.Success, execution.ErrorMessage)
+        row := repository.Database.QueryRowContext(statementContext, insertSQL, execution.ScheduledOperationID, execution.TradingPairSymbol, execution.OperationType, execution.UnitPrice, execution.Quantity, execution.TotalValue, execution.ExecutedAt, execution.Success, execution.ErrorMessage, execution.OrderIdentifier)
         var identifier int64
         var createdAt time.Time
         var updatedAt time.Time
@@ -39,7 +39,7 @@ func (repository *PostgresTradingOperationExecutionRepository) LogExecution(cont
 }
 
 func (repository *PostgresTradingOperationExecutionRepository) ListRecentExecutions(contextWithTimeout context.Context, limit int) ([]domain.TradingOperationExecution, error) {
-        querySQL := `SELECT id, scheduled_operation_id, trading_pair_symbol, operation_type, unit_price, quantity, total_value, executed_at, success, error_message, created_at, updated_at FROM trading_operation_executions ORDER BY executed_at DESC LIMIT $1`
+        querySQL := `SELECT id, scheduled_operation_id, trading_pair_symbol, operation_type, unit_price, quantity, total_value, executed_at, success, error_message, order_id, created_at, updated_at FROM trading_operation_executions ORDER BY executed_at DESC LIMIT $1`
         queryContext, queryCancel := context.WithTimeout(contextWithTimeout, 5*time.Second)
         defer queryCancel()
 
@@ -54,7 +54,8 @@ func (repository *PostgresTradingOperationExecutionRepository) ListRecentExecuti
                 var execution domain.TradingOperationExecution
                 var scheduledOperationID sql.NullInt64
                 var errorMessage sql.NullString
-                scanError := rows.Scan(&execution.Identifier, &scheduledOperationID, &execution.TradingPairSymbol, &execution.OperationType, &execution.UnitPrice, &execution.Quantity, &execution.TotalValue, &execution.ExecutedAt, &execution.Success, &errorMessage, &execution.CreatedAt, &execution.UpdatedAt)
+                var orderIdentifier sql.NullString
+                scanError := rows.Scan(&execution.Identifier, &scheduledOperationID, &execution.TradingPairSymbol, &execution.OperationType, &execution.UnitPrice, &execution.Quantity, &execution.TotalValue, &execution.ExecutedAt, &execution.Success, &errorMessage, &orderIdentifier, &execution.CreatedAt, &execution.UpdatedAt)
                 if scanError != nil {
                         return nil, scanError
                 }
@@ -66,6 +67,10 @@ func (repository *PostgresTradingOperationExecutionRepository) ListRecentExecuti
                 if errorMessage.Valid {
                         value := errorMessage.String
                         execution.ErrorMessage = &value
+                }
+                if orderIdentifier.Valid {
+                        value := orderIdentifier.String
+                        execution.OrderIdentifier = &value
                 }
 
                 executions = append(executions, execution)
