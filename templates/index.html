@@ -41,14 +41,14 @@
         @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
     </style>
 </head>
-<body x-data="dashboard()" x-init="initDashboard()">
+<body x-data="dashboard({{if .IsBinanceConfigured}}true{{else}}false{{end}})" x-init="initDashboard()">
 <header>
     <h1>Coin Alert • Trades and Alerts</h1>
     <p>Rewritten in Go with SOLID boundaries, automation, and safer credentials.</p>
 </header>
 <div class="container">
     <div class="grid">
-        <div class="card">
+        <div class="card" x-data="credentialsPanel({{if .IsBinanceConfigured}}true{{else}}false{{end}})">
             <h2>Binance Credentials</h2>
             <p class="muted">Apply your API Key and Secret Key to enable automations and trades.</p>
             <form action="/settings/binance" method="post">
@@ -69,11 +69,16 @@
                 </div>
             </div>
             <div style="margin-top: 12px;">
-                {{if .IsBinanceConfigured}}
-                    <div class="status-chip">Credentials validated</div>
-                {{else}}
-                    <div class="status-chip warning">Pending validation</div>
-                {{end}}
+                <div class="status-chip" x-show="isCredentialsValidated">Credentials validated</div>
+                <div class="status-chip warning" x-show="!isCredentialsValidated">Pending validation</div>
+            </div>
+            <div style="margin-top: 12px; display:flex; gap:12px; flex-wrap:wrap;">
+                <button type="button" x-on:click.prevent="revalidateCredentials()" x-bind:disabled="isValidationInProgress" style="width:auto; padding:10px 14px;">
+                    <span x-show="!isValidationInProgress">Revalidate keys</span>
+                    <span x-show="isValidationInProgress">Validating...</span>
+                </button>
+                <p class="muted" x-text="validationMessage" x-show="validationMessage"></p>
+                <p class="muted" style="color:#ef4444;" x-text="validationError" x-show="validationError"></p>
             </div>
         </div>
         <div class="card">
@@ -132,6 +137,30 @@
         </div>
     </div>
     <div class="card" style="margin-top: 20px;">
+        <h2>Automation configuration</h2>
+        <p class="muted">Current intervals and endpoints used for recurring sells and daily purchases.</p>
+        <div class="row">
+            <div>
+                <div class="muted">Automatic sell interval (minutes)</div>
+                <div class="pill">{{.AutomaticSellIntervalMinutes}}</div>
+            </div>
+            <div>
+                <div class="muted">Daily purchase interval (minutes)</div>
+                <div class="pill">{{.DailyPurchaseIntervalMinutes}}</div>
+            </div>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+            <div>
+                <div class="muted">Binance API base URL</div>
+                <div class="pill">{{.BinanceAPIBaseURL}}</div>
+            </div>
+            <div>
+                <div class="muted">Application base URL</div>
+                <div class="pill">{{.ApplicationBaseURL}}</div>
+            </div>
+        </div>
+    </div>
+    <div class="card" style="margin-top: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <h2>Recent trades</h2>
             <div style="display:flex; align-items:center; gap:12px;">
@@ -153,11 +182,12 @@
     </div>
 </div>
 <script>
-    function dashboard() {
+    function dashboard(initialValidationStatus) {
         return {
             isRefreshingTransactions: false,
             lastTransactionsRefreshMessage: '',
             transactionsRefreshError: '',
+            initialValidationStatus,
             initDashboard() {
                 Alpine.store('symbolStore', { symbols: [] });
                 this.loadSymbols();
@@ -192,6 +222,40 @@
                     this.isRefreshingTransactions = false;
                 }
             },
+        };
+    }
+
+    function credentialsPanel(isInitiallyValidated) {
+        return {
+            isCredentialsValidated: isInitiallyValidated,
+            isValidationInProgress: false,
+            validationMessage: '',
+            validationError: '',
+            async revalidateCredentials() {
+                this.isValidationInProgress = true;
+                this.validationMessage = '';
+                this.validationError = '';
+
+                try {
+                    const response = await fetch('/settings/binance/revalidate', { method: 'POST' });
+                    if (!response.ok) {
+                        const errorBody = await response.text();
+                        this.validationError = errorBody || 'Revalidation failed. Please try again.';
+                        this.isCredentialsValidated = false;
+                        return;
+                    }
+
+                    const body = await response.json();
+                    this.validationMessage = body.message || 'Credentials are valid.';
+                    this.isCredentialsValidated = true;
+                } catch (error) {
+                    console.error('Credential revalidation failed', error);
+                    this.validationError = 'Revalidation failed. Please try again.';
+                    this.isCredentialsValidated = false;
+                } finally {
+                    this.isValidationInProgress = false;
+                }
+            }
         };
     }
 

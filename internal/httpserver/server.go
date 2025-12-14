@@ -14,23 +14,25 @@ import (
 )
 
 type Server struct {
-	TransactionService   *service.TransactionService
-	EmailAlertService    *service.EmailAlertService
-	AutomationService    *service.AutomationService
-	CredentialService    *service.CredentialService
-	BinanceSymbolService *service.BinanceSymbolService
-	Templates            *template.Template
+        TransactionService   *service.TransactionService
+        EmailAlertService    *service.EmailAlertService
+        AutomationService    *service.AutomationService
+        CredentialService    *service.CredentialService
+        BinanceSymbolService *service.BinanceSymbolService
+        SettingsSummary      DashboardSettingsSummary
+        Templates            *template.Template
 }
 
-func NewServer(transactionService *service.TransactionService, emailAlertService *service.EmailAlertService, automationService *service.AutomationService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, templates *template.Template) *Server {
-	return &Server{
-		TransactionService:   transactionService,
-		EmailAlertService:    emailAlertService,
-		AutomationService:    automationService,
-		CredentialService:    credentialService,
-		BinanceSymbolService: binanceSymbolService,
-		Templates:            templates,
-	}
+func NewServer(transactionService *service.TransactionService, emailAlertService *service.EmailAlertService, automationService *service.AutomationService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, settingsSummary DashboardSettingsSummary, templates *template.Template) *Server {
+        return &Server{
+                TransactionService:   transactionService,
+                EmailAlertService:    emailAlertService,
+                AutomationService:    automationService,
+                CredentialService:    credentialService,
+                BinanceSymbolService: binanceSymbolService,
+                SettingsSummary:      settingsSummary,
+                Templates:            templates,
+        }
 }
 
 func (server *Server) RegisterRoutes() http.Handler {
@@ -38,12 +40,13 @@ func (server *Server) RegisterRoutes() http.Handler {
 	router.HandleFunc("/", server.renderDashboard)
 	router.HandleFunc("/transactions/buy", server.handleBuyRequest)
 	router.HandleFunc("/transactions/sell", server.handleSellRequest)
-	router.HandleFunc("/alerts/email", server.handleEmailAlertRequest)
-	router.HandleFunc("/health", server.handleHealthCheck)
-	router.HandleFunc("/transactions", server.handleListTransactions)
-	router.HandleFunc("/settings/binance", server.handleUpdateBinanceCredentials)
-	router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
-	return router
+        router.HandleFunc("/alerts/email", server.handleEmailAlertRequest)
+        router.HandleFunc("/health", server.handleHealthCheck)
+        router.HandleFunc("/transactions", server.handleListTransactions)
+        router.HandleFunc("/settings/binance", server.handleUpdateBinanceCredentials)
+        router.HandleFunc("/settings/binance/revalidate", server.handleRevalidateBinanceCredentials)
+        router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
+        return router
 }
 
 func (server *Server) renderDashboard(responseWriter http.ResponseWriter, request *http.Request) {
@@ -210,10 +213,10 @@ func (server *Server) handleUpdateBinanceCredentials(responseWriter http.Respons
 }
 
 func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet {
-		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
+        if request.Method != http.MethodGet {
+                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+                return
+        }
 
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 6*time.Second)
 	defer cancel()
@@ -234,20 +237,24 @@ func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, r
 }
 
 func (server *Server) buildDashboardViewModel(requestContext context.Context) (*DashboardViewModel, error) {
-	contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
-	defer cancel()
+        contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
+        defer cancel()
 
 	transactions, listError := server.TransactionService.ListTransactions(contextWithTimeout, 100)
 	if listError != nil {
 		return nil, listError
 	}
 
-	return &DashboardViewModel{
-		Transactions:           transactions,
-		IsBinanceConfigured:    server.CredentialService.HasValidBinanceCredentials(),
-		BinanceAPIKeyMasked:    server.CredentialService.GetMaskedBinanceAPIKey(),
-		BinanceAPISecretMasked: server.CredentialService.GetMaskedBinanceAPISecret(),
-	}, nil
+        return &DashboardViewModel{
+                Transactions:                 transactions,
+                IsBinanceConfigured:          server.CredentialService.HasValidBinanceCredentials(),
+                BinanceAPIKeyMasked:          server.CredentialService.GetMaskedBinanceAPIKey(),
+                BinanceAPISecretMasked:       server.CredentialService.GetMaskedBinanceAPISecret(),
+                AutomaticSellIntervalMinutes: server.SettingsSummary.AutomaticSellIntervalMinutes,
+                DailyPurchaseIntervalMinutes: server.SettingsSummary.DailyPurchaseIntervalMinutes,
+                BinanceAPIBaseURL:            server.SettingsSummary.BinanceAPIBaseURL,
+                ApplicationBaseURL:           server.SettingsSummary.ApplicationBaseURL,
+        }, nil
 }
 
 func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, message string) {
@@ -260,17 +267,48 @@ func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, messag
 }
 
 type DashboardViewModel struct {
-	Transactions           []domain.Transaction
-	IsBinanceConfigured    bool
-	BinanceAPIKeyMasked    string
-	BinanceAPISecretMasked string
+        Transactions                 []domain.Transaction
+        IsBinanceConfigured          bool
+        BinanceAPIKeyMasked          string
+        BinanceAPISecretMasked       string
+        AutomaticSellIntervalMinutes int
+        DailyPurchaseIntervalMinutes int
+        BinanceAPIBaseURL            string
+        ApplicationBaseURL           string
 }
 
 type BinanceSymbolsResponse struct {
-	Symbols []string `json:"symbols"`
+        Symbols []string `json:"symbols"`
 }
 
 func (server *Server) handleHealthCheck(responseWriter http.ResponseWriter, request *http.Request) {
-	responseWriter.WriteHeader(http.StatusOK)
-	responseWriter.Write([]byte("ok"))
+        responseWriter.WriteHeader(http.StatusOK)
+        responseWriter.Write([]byte("ok"))
+}
+
+func (server *Server) handleRevalidateBinanceCredentials(responseWriter http.ResponseWriter, request *http.Request) {
+        if request.Method != http.MethodPost {
+                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+                return
+        }
+
+        revalidationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+        defer cancel()
+
+        revalidationError := server.CredentialService.RevalidateStoredCredentials(revalidationContext)
+        if revalidationError != nil {
+                log.Printf("Binance credential revalidation failed: %v", revalidationError)
+                http.Error(responseWriter, revalidationError.Error(), http.StatusBadRequest)
+                return
+        }
+
+        responseWriter.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(responseWriter).Encode(map[string]string{"message": "Credentials successfully revalidated."})
+}
+
+type DashboardSettingsSummary struct {
+        AutomaticSellIntervalMinutes int
+        DailyPurchaseIntervalMinutes int
+        BinanceAPIBaseURL            string
+        ApplicationBaseURL           string
 }

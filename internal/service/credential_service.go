@@ -11,25 +11,25 @@ import (
 )
 
 type CredentialService struct {
-	BinanceAPIKey            string
-	BinanceAPISecret         string
-	credentialsValidated     bool
-	credentialsSupplied      bool
-	credentialRepository     repository.BinanceCredentialRepository
-	credentialValidator      *BinanceCredentialValidator
-	defaultValidationTimeout time.Duration
+        BinanceAPIKey            string
+        BinanceAPISecret         string
+        credentialsValidated     bool
+        credentialsSupplied      bool
+        credentialRepository     repository.BinanceCredentialRepository
+        credentialValidator      *BinanceCredentialValidator
+        defaultValidationTimeout time.Duration
 }
 
 func NewCredentialService(repositoryInstance repository.BinanceCredentialRepository, validator *BinanceCredentialValidator, initialAPIKey string, initialAPISecret string) *CredentialService {
-	return &CredentialService{
-		BinanceAPIKey:            initialAPIKey,
-		BinanceAPISecret:         initialAPISecret,
-		credentialsValidated:     false,
-		credentialsSupplied:      false,
-		credentialRepository:     repositoryInstance,
-		credentialValidator:      validator,
-		defaultValidationTimeout: 8 * time.Second,
-	}
+        return &CredentialService{
+                BinanceAPIKey:            initialAPIKey,
+                BinanceAPISecret:         initialAPISecret,
+                credentialsValidated:     false,
+                credentialsSupplied:      false,
+                credentialRepository:     repositoryInstance,
+                credentialValidator:      validator,
+                defaultValidationTimeout: 8 * time.Second,
+        }
 }
 
 func (service *CredentialService) InitializeCredentials(initializationContext context.Context) {
@@ -63,8 +63,8 @@ func (service *CredentialService) InitializeCredentials(initializationContext co
 }
 
 func (service *CredentialService) ValidateAndPersistCredentials(operationContext context.Context, updatedAPIKey string, updatedAPISecret string) error {
-	validationContext, cancel := context.WithTimeout(operationContext, service.defaultValidationTimeout)
-	defer cancel()
+        validationContext, cancel := context.WithTimeout(operationContext, service.defaultValidationTimeout)
+        defer cancel()
 
 	if service.credentialValidator == nil {
 		return errors.New("Binance credential validator is not configured")
@@ -96,17 +96,17 @@ func (service *CredentialService) HasValidBinanceCredentials() bool {
 }
 
 func (service *CredentialService) HasSuppliedBinanceCredentials() bool {
-	if service.credentialsSupplied {
-		return true
-	}
+        if service.credentialsSupplied {
+                return true
+        }
 
 	return strings.TrimSpace(service.BinanceAPIKey) != "" && strings.TrimSpace(service.BinanceAPISecret) != ""
 }
 
 func (service *CredentialService) GetMaskedBinanceAPIKey() string {
-	if !service.credentialsValidated {
-		return ""
-	}
+        if !service.credentialsValidated {
+                return ""
+        }
 
 	if len(service.BinanceAPIKey) <= 4 {
 		return "****"
@@ -117,27 +117,44 @@ func (service *CredentialService) GetMaskedBinanceAPIKey() string {
 }
 
 func (service *CredentialService) GetMaskedBinanceAPISecret() string {
-	if !service.credentialsValidated {
-		return ""
-	}
+        if !service.HasSuppliedBinanceCredentials() {
+                return ""
+        }
 
-	if len(service.BinanceAPISecret) <= 4 {
-		return "****"
-	}
-
-	trailingCharacters := service.BinanceAPISecret[len(service.BinanceAPISecret)-4:]
-	return "****" + trailingCharacters
+        return "********"
 }
 
 func (service *CredentialService) validateAndSet(validationContext context.Context, apiKey string, apiSecret string) error {
-	validationError := service.credentialValidator.ValidateCredentials(validationContext, apiKey, apiSecret)
-	if validationError != nil {
-		service.credentialsValidated = false
-		return validationError
-	}
+        validationError := service.credentialValidator.ValidateCredentials(validationContext, apiKey, apiSecret)
+        if validationError != nil {
+                service.credentialsValidated = false
+                return validationError
+        }
 
 	service.BinanceAPIKey = apiKey
 	service.BinanceAPISecret = apiSecret
 	service.credentialsValidated = true
 	return nil
+}
+
+func (service *CredentialService) RevalidateStoredCredentials(operationContext context.Context) error {
+        if strings.TrimSpace(service.BinanceAPIKey) == "" || strings.TrimSpace(service.BinanceAPISecret) == "" {
+            service.credentialsValidated = false
+            service.credentialsSupplied = false
+            return errors.New("Binance credentials are missing. Please provide both API Key and Secret Key before revalidating.")
+        }
+
+        validationContext, cancel := context.WithTimeout(operationContext, service.defaultValidationTimeout)
+        defer cancel()
+
+        validationError := service.credentialValidator.ValidateCredentials(validationContext, service.BinanceAPIKey, service.BinanceAPISecret)
+        if validationError != nil {
+            service.credentialsValidated = false
+            service.credentialsSupplied = true
+            return validationError
+        }
+
+        service.credentialsValidated = true
+        service.credentialsSupplied = true
+        return nil
 }

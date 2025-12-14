@@ -44,8 +44,15 @@ func main() {
 		log.Fatalf("Could not parse templates: %v", templateError)
 	}
 
-	server := httpserver.NewServer(transactionService, emailAlertService, automationService, credentialService, binanceSymbolService, parsedTemplates)
-	router := server.RegisterRoutes()
+        dashboardSettingsSummary := httpserver.DashboardSettingsSummary{
+                AutomaticSellIntervalMinutes: applicationConfiguration.AutomaticSellIntervalMinutes,
+                DailyPurchaseIntervalMinutes: applicationConfiguration.DailyPurchaseIntervalMinutes,
+                BinanceAPIBaseURL:            applicationConfiguration.BinanceAPIBaseURL,
+                ApplicationBaseURL:           applicationConfiguration.ApplicationBaseURL,
+        }
+
+        server := httpserver.NewServer(transactionService, emailAlertService, automationService, credentialService, binanceSymbolService, dashboardSettingsSummary, parsedTemplates)
+        router := server.RegisterRoutes()
 
 	applicationContext, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
