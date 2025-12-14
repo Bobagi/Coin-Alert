@@ -468,6 +468,7 @@ type DashboardSettingsSummary struct {
         AutomaticSellIntervalMinutes int
         DailyPurchaseIntervalMinutes int
         BinanceAPIBaseURL            string
+        ActiveBinanceEnvironment     string
         ApplicationBaseURL           string
         TradingPairSymbol            string
         CapitalThreshold             float64

@@ -66,6 +66,7 @@ func main() {
                 AutomaticSellIntervalMinutes: applicationConfiguration.AutomaticSellIntervalMinutes,
                 DailyPurchaseIntervalMinutes: applicationConfiguration.DailyPurchaseIntervalMinutes,
                 BinanceAPIBaseURL:            activeEnvironment.RESTBaseURL,
+                ActiveBinanceEnvironment:     activeEnvironment.EnvironmentName,
                 ApplicationBaseURL:           applicationConfiguration.ApplicationBaseURL,
                 TradingPairSymbol:            applicationConfiguration.TradingPairSymbol,
                 CapitalThreshold:             applicationConfiguration.TradingCapitalThreshold,
