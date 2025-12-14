@@ -41,14 +41,16 @@ func InitializePostgresConnector(databaseURL string) (*PostgresConnector, error)
 
 func (connector *PostgresConnector) ensureSchema() error {
         schemaCreationSQL := `
-CREATE TABLE IF NOT EXISTS transactions (
+CREATE TABLE IF NOT EXISTS trading_operations (
     id SERIAL PRIMARY KEY,
-    operation_type VARCHAR(10) NOT NULL,
-    asset_symbol VARCHAR(20) NOT NULL,
-    quantity NUMERIC(20,8) NOT NULL,
-    price_per_unit NUMERIC(20,8) NOT NULL,
-    notes TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    trading_pair_symbol VARCHAR(30) NOT NULL,
+    quantity_purchased NUMERIC(20,8) NOT NULL,
+    purchase_price_per_unit NUMERIC(20,8) NOT NULL,
+    target_profit_percent NUMERIC(10,4) NOT NULL,
+    status VARCHAR(10) NOT NULL,
+    sell_price_per_unit NUMERIC(20,8),
+    purchased_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    sold_at TIMESTAMP WITH TIME ZONE
 );
 
 CREATE TABLE IF NOT EXISTS email_alerts (

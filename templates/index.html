@@ -82,45 +82,25 @@
             </div>
         </div>
         <div class="card">
-            <h2>Log Buy</h2>
-            <form action="/transactions/buy" method="post">
-                <label for="asset_symbol_buy">Asset</label>
-                <div class="dropdown" x-data="symbolDropdown('asset_symbol_buy')">
-                    <input id="asset_symbol_buy" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. BTCUSDT" autocomplete="off" required>
+            <h2>Record purchase</h2>
+            <p class="muted">One trading pair drives both buying and selling. Each purchase reserves capital until auto-sold at your profit target.</p>
+            <form action="/operations/purchase" method="post">
+                <label for="trading_pair_symbol">Trading pair</label>
+                <div class="dropdown" x-data="symbolDropdown('trading_pair_symbol')">
+                    <input id="trading_pair_symbol" name="trading_pair_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. BTCUSDT" autocomplete="off" required value="{{.TradingPairSymbol}}">
                     <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
                         <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
                             <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
                 </div>
-                <label for="quantity_buy">Quantity</label>
-                <input id="quantity_buy" name="quantity" type="number" step="0.00000001" min="0" required>
-                <label for="price_buy">Unit price</label>
-                <input id="price_buy" name="price_per_unit" type="number" step="0.00000001" min="0" required>
-                <label for="notes_buy">Notes</label>
-                <textarea id="notes_buy" name="notes" rows="2" placeholder="E.g. manual purchase"></textarea>
-                <button type="submit">Save buy</button>
-            </form>
-        </div>
-        <div class="card">
-            <h2>Log Sell</h2>
-            <form action="/transactions/sell" method="post">
-                <label for="asset_symbol_sell">Asset</label>
-                <div class="dropdown" x-data="symbolDropdown('asset_symbol_sell')">
-                    <input id="asset_symbol_sell" name="asset_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. ETHUSDT" autocomplete="off" required>
-                    <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
-                        <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
-                            <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
-                        </template>
-                    </div>
-                </div>
-                <label for="quantity_sell">Quantity</label>
-                <input id="quantity_sell" name="quantity" type="number" step="0.00000001" min="0" required>
-                <label for="price_sell">Unit price</label>
-                <input id="price_sell" name="price_per_unit" type="number" step="0.00000001" min="0" required>
-                <label for="notes_sell">Notes</label>
-                <textarea id="notes_sell" name="notes" rows="2" placeholder="E.g. automated sell"></textarea>
-                <button class="secondary" type="submit">Save sell</button>
+                <label for="quantity_purchase">Quantity</label>
+                <input id="quantity_purchase" name="quantity" type="number" step="0.00000001" min="0" required>
+                <label for="price_purchase">Unit price</label>
+                <input id="price_purchase" name="price_per_unit" type="number" step="0.00000001" min="0" required>
+                <label for="target_profit_percent">Profit target (%)</label>
+                <input id="target_profit_percent" name="target_profit_percent" type="number" step="0.01" min="0.01" value="{{printf "%.2f" .TargetProfitPercent}}" required>
+                <button type="submit">Save purchase</button>
             </form>
         </div>
         <div class="card">
@@ -138,15 +118,25 @@
     </div>
     <div class="card" style="margin-top: 20px;">
         <h2>Automation configuration</h2>
-        <p class="muted">Current intervals and endpoints used for recurring sells and daily purchases.</p>
+        <p class="muted">Single trading pair with shared capital and profit rules.</p>
         <div class="row">
+            <div>
+                <div class="muted">Trading pair</div>
+                <div class="pill">{{.TradingPairSymbol}}</div>
+            </div>
+            <div>
+                <div class="muted">Capital threshold</div>
+                <div class="pill">{{printf "%.2f" .CapitalThreshold}}</div>
+            </div>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+            <div>
+                <div class="muted">Profit target (%)</div>
+                <div class="pill">{{printf "%.2f" .TargetProfitPercent}}</div>
+            </div>
             <div>
                 <div class="muted">Automatic sell interval (minutes)</div>
                 <div class="pill">{{.AutomaticSellIntervalMinutes}}</div>
-            </div>
-            <div>
-                <div class="muted">Daily purchase interval (minutes)</div>
-                <div class="pill">{{.DailyPurchaseIntervalMinutes}}</div>
             </div>
         </div>
         <div class="row" style="margin-top: 12px;">
@@ -162,7 +152,7 @@
     </div>
     <div class="card" style="margin-top: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h2>Recent trades</h2>
+            <h2>Recent operations</h2>
             <div style="display:flex; align-items:center; gap:12px;">
                 <div class="loading-indicator" x-show="isRefreshingTransactions" x-transition>
                     <span class="loading-dot"></span>
@@ -175,7 +165,7 @@
             </div>
         </div>
         <div class="transactions" id="transactions-list">
-            {{template "partials/transactions.html" .Transactions}}
+            {{template "partials/transactions.html" .TradingOperations}}
         </div>
         <p class="muted" x-show="lastTransactionsRefreshMessage" x-text="lastTransactionsRefreshMessage" style="margin-top:8px;"></p>
         <p class="muted" x-show="transactionsRefreshError" x-text="transactionsRefreshError" style="margin-top:8px; color:#ef4444;"></p>
@@ -206,7 +196,7 @@
                 this.isRefreshingTransactions = true;
                 this.transactionsRefreshError = '';
                 try {
-                    const response = await fetch('/transactions');
+                    const response = await fetch('/operations');
                     if (!response.ok) {
                         this.transactionsRefreshError = 'Unable to refresh trades right now.';
                         return;

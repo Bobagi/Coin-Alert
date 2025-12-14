@@ -41,7 +41,7 @@ Alternatively, keep the same credentials used during the first database initiali
 - `templates`: HTML/CSS dashboard.
 
 ## Features
-- Log buys and sells with validation.
-- List recent trades.
+- Unified trading operations: purchase, monitor profit target, and mark as sold in a single log.
+- Capital threshold enforcement for the configured trading pair with automatic sell monitoring.
+- List recent operations with purchase and sell details.
 - Send authenticated SMTP email alerts with persistence.
-- Automated buy and sell routines on configurable intervals.
