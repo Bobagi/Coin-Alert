@@ -12,6 +12,7 @@ type TradingOperationRepository interface {
 	CreatePurchaseOperation(context.Context, domain.TradingOperation) (int64, error)
 	ListRecentOperations(context.Context, int) ([]domain.TradingOperation, error)
 	ListOpenOperations(context.Context) ([]domain.TradingOperation, error)
+	FindOldestOpenOperationForPair(context.Context, string) (*domain.TradingOperation, error)
 	UpdateOperationAsSold(context.Context, int64, float64) error
 	CalculateOpenAllocationTotal(context.Context) (float64, error)
 }
@@ -125,4 +126,29 @@ func (repository *PostgresTradingOperationRepository) CalculateOpenAllocationTot
 	}
 
 	return totalAllocated, nil
+}
+
+func (repository *PostgresTradingOperationRepository) FindOldestOpenOperationForPair(contextWithTimeout context.Context, tradingPairSymbol string) (*domain.TradingOperation, error) {
+	querySQL := `SELECT id, trading_pair_symbol, quantity_purchased, purchase_price_per_unit, target_profit_percent, status, sell_price_per_unit, purchased_at, sold_at FROM trading_operations WHERE status = $1 AND trading_pair_symbol = $2 ORDER BY purchased_at ASC LIMIT 1`
+	queryContext, queryCancel := context.WithTimeout(contextWithTimeout, 5*time.Second)
+	defer queryCancel()
+
+	row := repository.Database.QueryRowContext(queryContext, querySQL, domain.TradingOperationStatusOpen, tradingPairSymbol)
+
+	var operation domain.TradingOperation
+	var sellPrice sql.NullFloat64
+	scanError := row.Scan(&operation.Identifier, &operation.TradingPairSymbol, &operation.QuantityPurchased, &operation.PurchasePricePerUnit, &operation.TargetProfitPercent, &operation.Status, &sellPrice, &operation.PurchaseTimestamp, &operation.SellTimestamp)
+	if scanError != nil {
+		if scanError == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, scanError
+	}
+
+	if sellPrice.Valid {
+		sellPricePerUnit := sellPrice.Float64
+		operation.SellPricePerUnit = &sellPricePerUnit
+	}
+
+	return &operation, nil
 }

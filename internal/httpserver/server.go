@@ -14,29 +14,29 @@ import (
 )
 
 type Server struct {
-        TradingOperationService *service.TradingOperationService
-        EmailAlertService       *service.EmailAlertService
-        AutomationService       *service.TradingAutomationService
-        CredentialService       *service.CredentialService
-        BinanceSymbolService    *service.BinanceSymbolService
-        BinancePriceService     *service.BinancePriceService
-        TradingScheduleService  *service.TradingScheduleService
-        SettingsSummary         DashboardSettingsSummary
-        Templates               *template.Template
+	TradingOperationService *service.TradingOperationService
+	EmailAlertService       *service.EmailAlertService
+	AutomationService       *service.TradingAutomationService
+	CredentialService       *service.CredentialService
+	BinanceSymbolService    *service.BinanceSymbolService
+	BinancePriceService     *service.BinancePriceService
+	TradingScheduleService  *service.TradingScheduleService
+	SettingsSummary         DashboardSettingsSummary
+	Templates               *template.Template
 }
 
 func NewServer(tradingOperationService *service.TradingOperationService, emailAlertService *service.EmailAlertService, automationService *service.TradingAutomationService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, binancePriceService *service.BinancePriceService, tradingScheduleService *service.TradingScheduleService, settingsSummary DashboardSettingsSummary, templates *template.Template) *Server {
-        return &Server{
-                TradingOperationService: tradingOperationService,
-                EmailAlertService:       emailAlertService,
-                AutomationService:       automationService,
-                CredentialService:       credentialService,
-                BinanceSymbolService:    binanceSymbolService,
-                BinancePriceService:     binancePriceService,
-                TradingScheduleService:  tradingScheduleService,
-                SettingsSummary:         settingsSummary,
-                Templates:               templates,
-        }
+	return &Server{
+		TradingOperationService: tradingOperationService,
+		EmailAlertService:       emailAlertService,
+		AutomationService:       automationService,
+		CredentialService:       credentialService,
+		BinanceSymbolService:    binanceSymbolService,
+		BinancePriceService:     binancePriceService,
+		TradingScheduleService:  tradingScheduleService,
+		SettingsSummary:         settingsSummary,
+		Templates:               templates,
+	}
 }
 
 func (server *Server) RegisterRoutes() http.Handler {
@@ -46,11 +46,11 @@ func (server *Server) RegisterRoutes() http.Handler {
 	router.HandleFunc("/alerts/email", server.handleEmailAlertRequest)
 	router.HandleFunc("/health", server.handleHealthCheck)
 	router.HandleFunc("/operations", server.handleListOperations)
-        router.HandleFunc("/settings/binance", server.handleUpdateBinanceCredentials)
-        router.HandleFunc("/settings/binance/revalidate", server.handleRevalidateBinanceCredentials)
-        router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
-        router.HandleFunc("/operations/execute-next", server.handleExecuteNextOperation)
-        return router
+	router.HandleFunc("/settings/binance", server.handleUpdateBinanceCredentials)
+	router.HandleFunc("/settings/binance/revalidate", server.handleRevalidateBinanceCredentials)
+	router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
+	router.HandleFunc("/operations/execute-next", server.handleExecuteNextOperation)
+	return router
 }
 
 func (server *Server) renderDashboard(responseWriter http.ResponseWriter, request *http.Request) {
@@ -124,35 +124,32 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 		return
 	}
 
-        server.TradingOperationService.UpdateCapitalThreshold(capitalThreshold)
-        server.TradingScheduleService.UpdateCapitalThreshold(capitalThreshold)
-        server.SettingsSummary.CapitalThreshold = capitalThreshold
+	server.TradingOperationService.UpdateCapitalThreshold(capitalThreshold)
+	server.TradingScheduleService.UpdateCapitalThreshold(capitalThreshold)
+	server.SettingsSummary.CapitalThreshold = capitalThreshold
 
 	calculatedQuantity := capitalThreshold / currentPricePerUnit
 
-        server.TradingScheduleService.UpdateTargetProfitPercent(targetProfitPercent)
+	server.TradingScheduleService.UpdateTargetProfitPercent(targetProfitPercent)
 
-        operation := domain.TradingOperation{
-                TradingPairSymbol:    request.FormValue("trading_pair_symbol"),
-                QuantityPurchased:    calculatedQuantity,
-                PurchasePricePerUnit: currentPricePerUnit,
-                TargetProfitPercent:  targetProfitPercent,
-        }
+	operation := domain.TradingOperation{
+		TradingPairSymbol:    request.FormValue("trading_pair_symbol"),
+		QuantityPurchased:    calculatedQuantity,
+		PurchasePricePerUnit: currentPricePerUnit,
+		TargetProfitPercent:  targetProfitPercent,
+	}
 
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 	defer cancel()
 
-        _, creationError := server.TradingOperationService.RecordPurchaseOperation(contextWithTimeout, operation)
-        if creationError != nil {
-                log.Printf("Trading operation creation failed: %v", creationError)
-                http.Error(responseWriter, creationError.Error(), http.StatusBadRequest)
-                return
-        }
+	_, creationError := server.TradingOperationService.RecordPurchaseOperation(contextWithTimeout, operation)
+	if creationError != nil {
+		log.Printf("Trading operation creation failed: %v", creationError)
+		http.Error(responseWriter, creationError.Error(), http.StatusBadRequest)
+		return
+	}
 
-        _, scheduleError := server.TradingScheduleService.EnqueueNextSellOperation(contextWithTimeout)
-        if scheduleError != nil {
-                log.Printf("Could not enqueue next sell operation: %v", scheduleError)
-        }
+	server.AutomationService.ScheduleSellIfOpenPositionExists(contextWithTimeout)
 
 	http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
 }
@@ -195,10 +192,10 @@ func (server *Server) handleEmailAlertRequest(responseWriter http.ResponseWriter
 }
 
 func (server *Server) handleListOperations(responseWriter http.ResponseWriter, request *http.Request) {
-        if request.Method != http.MethodGet {
-                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-                return
-        }
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
 	if !server.CredentialService.HasValidBinanceCredentials() {
 		responseWriter.WriteHeader(http.StatusServiceUnavailable)
@@ -216,30 +213,30 @@ func (server *Server) handleListOperations(responseWriter http.ResponseWriter, r
 		return
 	}
 
-        renderError := server.Templates.ExecuteTemplate(responseWriter, "partials/transactions.html", tradingOperations)
-        if renderError != nil {
-                log.Printf("Partial render failed: %v", renderError)
-                http.Error(responseWriter, "Could not render transactions", http.StatusInternalServerError)
-                return
-        }
+	renderError := server.Templates.ExecuteTemplate(responseWriter, "partials/transactions.html", tradingOperations)
+	if renderError != nil {
+		log.Printf("Partial render failed: %v", renderError)
+		http.Error(responseWriter, "Could not render transactions", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (server *Server) handleExecuteNextOperation(responseWriter http.ResponseWriter, request *http.Request) {
-        if request.Method != http.MethodPost {
-                responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-                return
-        }
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
-        if !server.CredentialService.HasValidBinanceCredentials() {
-                responseWriter.WriteHeader(http.StatusServiceUnavailable)
-                server.renderErrorPage(responseWriter, "Binance credentials are missing or invalid. Please provide a valid API Key and Secret Key to continue.")
-                return
-        }
+	if !server.CredentialService.HasValidBinanceCredentials() {
+		responseWriter.WriteHeader(http.StatusServiceUnavailable)
+		server.renderErrorPage(responseWriter, "Binance credentials are missing or invalid. Please provide a valid API Key and Secret Key to continue.")
+		return
+	}
 
-        executionContext, executionCancel := context.WithTimeout(request.Context(), 15*time.Second)
-        defer executionCancel()
-        server.AutomationService.EvaluateAndSellProfitableOperations(executionContext)
-        http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
+	executionContext, executionCancel := context.WithTimeout(request.Context(), 15*time.Second)
+	defer executionCancel()
+	server.AutomationService.EvaluateAndSellProfitableOperations(executionContext)
+	http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
 }
 
 func (server *Server) handleUpdateBinanceCredentials(responseWriter http.ResponseWriter, request *http.Request) {
@@ -293,42 +290,42 @@ func (server *Server) buildDashboardViewModel(requestContext context.Context) (*
 	contextWithTimeout, cancel := context.WithTimeout(requestContext, 5*time.Second)
 	defer cancel()
 
-        tradingOperations, listError := server.TradingOperationService.ListOperations(contextWithTimeout, 100)
-        if listError != nil {
-                return nil, listError
-        }
+	tradingOperations, listError := server.TradingOperationService.ListOperations(contextWithTimeout, 100)
+	if listError != nil {
+		return nil, listError
+	}
 
-        scheduledOperations, scheduleError := server.TradingScheduleService.ListScheduledOperations(contextWithTimeout, 50)
-        if scheduleError != nil {
-                return nil, scheduleError
-        }
+	scheduledOperations, scheduleError := server.TradingScheduleService.ListScheduledOperations(contextWithTimeout, 50)
+	if scheduleError != nil {
+		return nil, scheduleError
+	}
 
-        nextOperation, nextError := server.TradingScheduleService.GetNextScheduledOperation(contextWithTimeout)
-        if nextError != nil {
-                return nil, nextError
-        }
+	nextOperation, nextError := server.TradingScheduleService.GetNextScheduledOperation(contextWithTimeout)
+	if nextError != nil {
+		return nil, nextError
+	}
 
-        executionHistory, executionError := server.TradingScheduleService.ListRecentExecutions(contextWithTimeout, 50)
-        if executionError != nil {
-                return nil, executionError
-        }
+	executionHistory, executionError := server.TradingScheduleService.ListRecentExecutions(contextWithTimeout, 50)
+	if executionError != nil {
+		return nil, executionError
+	}
 
-        return &DashboardViewModel{
-                TradingOperations:            tradingOperations,
-                ScheduledOperations:          scheduledOperations,
-                NextScheduledOperation:       nextOperation,
-                ExecutionHistory:             executionHistory,
-                IsBinanceConfigured:          server.CredentialService.HasValidBinanceCredentials(),
-                BinanceAPIKeyMasked:          server.CredentialService.GetMaskedBinanceAPIKey(),
-                BinanceAPISecretMasked:       server.CredentialService.GetMaskedBinanceAPISecret(),
-                AutomaticSellIntervalMinutes: server.SettingsSummary.AutomaticSellIntervalMinutes,
-                DailyPurchaseIntervalMinutes: server.SettingsSummary.DailyPurchaseIntervalMinutes,
-                BinanceAPIBaseURL:            server.SettingsSummary.BinanceAPIBaseURL,
-                ApplicationBaseURL:           server.SettingsSummary.ApplicationBaseURL,
-                TradingPairSymbol:            server.SettingsSummary.TradingPairSymbol,
-                CapitalThreshold:             server.SettingsSummary.CapitalThreshold,
-                TargetProfitPercent:          server.SettingsSummary.TargetProfitPercent,
-        }, nil
+	return &DashboardViewModel{
+		TradingOperations:            tradingOperations,
+		ScheduledOperations:          scheduledOperations,
+		NextScheduledOperation:       nextOperation,
+		ExecutionHistory:             executionHistory,
+		IsBinanceConfigured:          server.CredentialService.HasValidBinanceCredentials(),
+		BinanceAPIKeyMasked:          server.CredentialService.GetMaskedBinanceAPIKey(),
+		BinanceAPISecretMasked:       server.CredentialService.GetMaskedBinanceAPISecret(),
+		AutomaticSellIntervalMinutes: server.SettingsSummary.AutomaticSellIntervalMinutes,
+		DailyPurchaseIntervalMinutes: server.SettingsSummary.DailyPurchaseIntervalMinutes,
+		BinanceAPIBaseURL:            server.SettingsSummary.BinanceAPIBaseURL,
+		ApplicationBaseURL:           server.SettingsSummary.ApplicationBaseURL,
+		TradingPairSymbol:            server.SettingsSummary.TradingPairSymbol,
+		CapitalThreshold:             server.SettingsSummary.CapitalThreshold,
+		TargetProfitPercent:          server.SettingsSummary.TargetProfitPercent,
+	}, nil
 }
 
 func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, message string) {
@@ -341,15 +338,15 @@ func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, messag
 }
 
 type DashboardViewModel struct {
-        TradingOperations            []domain.TradingOperation
-        ScheduledOperations          []domain.ScheduledTradingOperation
-        NextScheduledOperation       *domain.ScheduledTradingOperation
-        ExecutionHistory             []domain.TradingOperationExecution
-        IsBinanceConfigured          bool
-        BinanceAPIKeyMasked          string
-        BinanceAPISecretMasked       string
-        AutomaticSellIntervalMinutes int
-        DailyPurchaseIntervalMinutes int
+	TradingOperations            []domain.TradingOperation
+	ScheduledOperations          []domain.ScheduledTradingOperation
+	NextScheduledOperation       *domain.ScheduledTradingOperation
+	ExecutionHistory             []domain.TradingOperationExecution
+	IsBinanceConfigured          bool
+	BinanceAPIKeyMasked          string
+	BinanceAPISecretMasked       string
+	AutomaticSellIntervalMinutes int
+	DailyPurchaseIntervalMinutes int
 	BinanceAPIBaseURL            string
 	ApplicationBaseURL           string
 	TradingPairSymbol            string
