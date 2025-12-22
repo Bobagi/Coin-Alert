@@ -33,6 +33,7 @@ func main() {
 	credentialRepository := repository.NewPostgresBinanceCredentialRepository(postgresConnector.Database)
 	scheduledOperationRepository := repository.NewPostgresScheduledTradingOperationRepository(postgresConnector.Database)
 	executionRepository := repository.NewPostgresTradingOperationExecutionRepository(postgresConnector.Database)
+	dailyPurchaseSettingsRepository := repository.NewPostgresDailyPurchaseSettingsRepository(postgresConnector.Database)
 
 	initialEnvironmentConfiguration := domain.BinanceEnvironmentConfiguration{
 		EnvironmentName: applicationConfiguration.BinanceEnvironment,
@@ -46,6 +47,7 @@ func main() {
 	tradingScheduleService := service.NewTradingScheduleService(scheduledOperationRepository, executionRepository, applicationConfiguration.AutomaticSellIntervalMinutes, applicationConfiguration.TradingPairSymbol, applicationConfiguration.TradingCapitalThreshold, applicationConfiguration.TargetProfitPercent)
 	binancePriceService := service.NewBinancePriceService(initialEnvironmentConfiguration)
 	automationService := service.NewTradingAutomationService(tradingOperationService, binancePriceService, tradingScheduleService, applicationConfiguration.TradingPairSymbol, applicationConfiguration.AutomaticSellIntervalMinutes)
+	dailyPurchaseSettingsService := service.NewDailyPurchaseSettingsService(dailyPurchaseSettingsRepository, applicationConfiguration.DailyPurchaseHourUTC)
 	binanceCredentialValidator := service.NewBinanceCredentialValidator(initialEnvironmentConfiguration.RESTBaseURL)
 	credentialService := service.NewCredentialService(credentialRepository, binanceCredentialValidator, initialEnvironmentConfiguration)
 	credentialService.InitializeCredentials(context.Background())
@@ -53,6 +55,7 @@ func main() {
 	binancePriceService.UpdateEnvironmentConfiguration(activeEnvironment)
 	binanceSymbolService := service.NewBinanceSymbolService(activeEnvironment)
 	binanceTradingService := service.NewBinanceTradingService(activeEnvironment)
+	dailyPurchaseAutomationService := service.NewDailyPurchaseAutomationService(dailyPurchaseSettingsService, binancePriceService, binanceTradingService, tradingOperationService, tradingScheduleService)
 	initialScheduleContext, initialScheduleCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer initialScheduleCancel()
 	automationService.EvaluateAndSellProfitableOperations(initialScheduleContext)
@@ -65,6 +68,7 @@ func main() {
 	dashboardSettingsSummary := httpserver.DashboardSettingsSummary{
 		AutomaticSellIntervalMinutes: applicationConfiguration.AutomaticSellIntervalMinutes,
 		DailyPurchaseIntervalMinutes: applicationConfiguration.DailyPurchaseIntervalMinutes,
+		DailyPurchaseHourUTC:         applicationConfiguration.DailyPurchaseHourUTC,
 		BinanceAPIBaseURL:            activeEnvironment.RESTBaseURL,
 		ActiveBinanceEnvironment:     activeEnvironment.EnvironmentName,
 		ApplicationBaseURL:           applicationConfiguration.ApplicationBaseURL,
@@ -73,13 +77,14 @@ func main() {
 		TargetProfitPercent:          applicationConfiguration.TargetProfitPercent,
 	}
 
-	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, credentialService, binanceSymbolService, binancePriceService, binanceTradingService, tradingScheduleService, dashboardSettingsSummary, parsedTemplates)
+	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, dailyPurchaseSettingsService, credentialService, binanceSymbolService, binancePriceService, binanceTradingService, tradingScheduleService, dashboardSettingsSummary, parsedTemplates)
 	router := server.RegisterRoutes()
 
 	applicationContext, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	automationService.StartBackgroundJobs(applicationContext)
+	dailyPurchaseAutomationService.StartBackgroundJobs(applicationContext)
 
 	serverAddress := ":" + applicationConfiguration.ServerPort
 	httpServer := &http.Server{Addr: serverAddress, Handler: router}

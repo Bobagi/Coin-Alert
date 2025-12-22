@@ -14,6 +14,7 @@ type ApplicationConfiguration struct {
         ApplicationBaseURL           string
         AutomaticSellIntervalMinutes int
         DailyPurchaseIntervalMinutes int
+        DailyPurchaseHourUTC         int
         TradingPairSymbol            string
         TradingCapitalThreshold      float64
         TargetProfitPercent          float64
@@ -30,6 +31,7 @@ type ApplicationConfiguration struct {
 func LoadApplicationConfiguration() ApplicationConfiguration {
         automaticSellIntervalMinutes := parseIntegerWithDefault("AUTO_SELL_INTERVAL_MINUTES", 60)
         dailyPurchaseIntervalMinutes := parseIntegerWithDefault("DAILY_PURCHASE_INTERVAL_MINUTES", 1440)
+        dailyPurchaseHourUTC := parseIntegerWithDefault("DIP_HOUR_UTC", 4)
         emailSMTPPort := parseIntegerWithDefault("EMAIL_SMTP_PORT", 587)
         binanceEnvironment := resolveBinanceEnvironment()
         binanceAPIBaseURL := resolveBinanceBaseURL(binanceEnvironment)
@@ -44,6 +46,7 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
                 ApplicationBaseURL:           getEnvironmentValueWithDefault("API_URL", "http://localhost:5020"),
                 AutomaticSellIntervalMinutes: automaticSellIntervalMinutes,
                 DailyPurchaseIntervalMinutes: dailyPurchaseIntervalMinutes,
+                DailyPurchaseHourUTC:         dailyPurchaseHourUTC,
                 TradingPairSymbol:            getEnvironmentValueWithDefault("TRADE_SYMBOL", "BTCUSDT"),
                 TradingCapitalThreshold:      tradingCapitalThreshold,
                 TargetProfitPercent:          targetProfitPercent,
@@ -64,11 +67,12 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
 
 func logNonSensitiveConfiguration(configuration ApplicationConfiguration) {
         log.Printf(
-                "Loaded configuration (non-sensitive): serverPort=%s applicationBaseURL=%s automaticSellIntervalMinutes=%d dailyPurchaseIntervalMinutes=%d tradingPair=%s capitalThreshold=%.2f targetProfitPercent=%.2f emailSMTPHost=%s emailSMTPPort=%d binanceEnvironment=%s",
+                "Loaded configuration (non-sensitive): serverPort=%s applicationBaseURL=%s automaticSellIntervalMinutes=%d dailyPurchaseIntervalMinutes=%d dailyPurchaseHourUTC=%d tradingPair=%s capitalThreshold=%.2f targetProfitPercent=%.2f emailSMTPHost=%s emailSMTPPort=%d binanceEnvironment=%s",
                 configuration.ServerPort,
                 configuration.ApplicationBaseURL,
                 configuration.AutomaticSellIntervalMinutes,
                 configuration.DailyPurchaseIntervalMinutes,
+                configuration.DailyPurchaseHourUTC,
                 configuration.TradingPairSymbol,
                 configuration.TradingCapitalThreshold,
                 configuration.TargetProfitPercent,
