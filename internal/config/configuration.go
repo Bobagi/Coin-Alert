@@ -33,6 +33,8 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
         emailSMTPPort := parseIntegerWithDefault("EMAIL_SMTP_PORT", 587)
         binanceEnvironment := resolveBinanceEnvironment()
         binanceAPIBaseURL := resolveBinanceBaseURL(binanceEnvironment)
+        binanceAPIKey := resolveBinanceAPIKey(binanceEnvironment)
+        binanceAPISecret := resolveBinanceAPISecret(binanceEnvironment)
         tradingCapitalThreshold := parseFloatWithDefault("TRADING_CAPITAL_THRESHOLD", 100)
         targetProfitPercent := parseFloatWithDefault("TARGET_PROFIT_PERCENT", 10)
 
@@ -49,8 +51,8 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
                 EmailSenderPassword:          getEnvironmentValueWithDefault("EMAIL_SENDER_PASSWORD", ""),
                 EmailSMTPHost:                getEnvironmentValueWithDefault("EMAIL_SMTP_HOST", ""),
                 EmailSMTPPort:                emailSMTPPort,
-                BinanceAPIKey:                getEnvironmentValueWithDefault("BINANCE_API_KEY", ""),
-                BinanceAPISecret:             getEnvironmentValueWithDefault("BINANCE_API_SECRET", ""),
+                BinanceAPIKey:                binanceAPIKey,
+                BinanceAPISecret:             binanceAPISecret,
                 BinanceAPIBaseURL:            binanceAPIBaseURL,
                 BinanceEnvironment:           binanceEnvironment,
         }
@@ -103,6 +105,30 @@ func resolveBinanceBaseURL(environmentName string) string {
         }
 
         return "https://testnet.binance.vision"
+}
+
+func resolveBinanceAPIKey(environmentName string) string {
+        normalizedEnvironment := domain.NormalizeBinanceEnvironment(environmentName)
+        if normalizedEnvironment == domain.BinanceEnvironmentTestnet {
+                testnetAPIKey := getEnvironmentValueWithDefault("BINANCE_TESTNET_API_KEY", "")
+                if testnetAPIKey != "" {
+                        return testnetAPIKey
+                }
+        }
+
+        return getEnvironmentValueWithDefault("BINANCE_API_KEY", "")
+}
+
+func resolveBinanceAPISecret(environmentName string) string {
+        normalizedEnvironment := domain.NormalizeBinanceEnvironment(environmentName)
+        if normalizedEnvironment == domain.BinanceEnvironmentTestnet {
+                testnetAPISecret := getEnvironmentValueWithDefault("BINANCE_TESTNET_API_SECRET", "")
+                if testnetAPISecret != "" {
+                        return testnetAPISecret
+                }
+        }
+
+        return getEnvironmentValueWithDefault("BINANCE_API_SECRET", "")
 }
 
 func buildDatabaseURL() string {

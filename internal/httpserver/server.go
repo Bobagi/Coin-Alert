@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -70,7 +72,7 @@ func (server *Server) renderDashboard(responseWriter http.ResponseWriter, reques
 		return
 	}
 
-	dashboardContext, contextError := server.buildDashboardViewModel(request.Context())
+	dashboardContext, contextError := server.buildDashboardViewModelWithRequest(request)
 	if contextError != nil {
 		log.Printf("Dashboard data error: %v", contextError)
 		http.Error(responseWriter, "Could not load dashboard data", http.StatusInternalServerError)
@@ -81,30 +83,6 @@ func (server *Server) renderDashboard(responseWriter http.ResponseWriter, reques
 	if templateError != nil {
 		log.Printf("Template render error: %v", templateError)
 		http.Error(responseWriter, "Could not render page", http.StatusInternalServerError)
-	}
-}
-
-func (server *Server) renderDashboardWithPurchaseError(responseWriter http.ResponseWriter, request *http.Request, statusCode int, userFacingMessage string) {
-	responseWriter.WriteHeader(statusCode)
-	dashboardContext, dashboardError := server.buildDashboardViewModel(request.Context())
-	if dashboardError != nil {
-		log.Printf("Dashboard reload failed while handling purchase error: %v", dashboardError)
-		server.renderMinimalPurchaseError(responseWriter, userFacingMessage)
-		return
-	}
-	dashboardContext.PurchaseErrorMessage = userFacingMessage
-	templateError := server.Templates.ExecuteTemplate(responseWriter, "index.html", dashboardContext)
-	if templateError != nil {
-		log.Printf("Template render error while showing purchase error: %v", templateError)
-		server.renderMinimalPurchaseError(responseWriter, userFacingMessage)
-	}
-}
-
-func (server *Server) renderMinimalPurchaseError(responseWriter http.ResponseWriter, userFacingMessage string) {
-	responseWriter.Header().Set("Content-Type", "text/html")
-	_, writeError := responseWriter.Write([]byte("<html><body style=\"font-family:Arial; background:#0f172a; color:#e2e8f0; padding:24px;\"><h2>Purchase error</h2><p>" + template.HTMLEscapeString(userFacingMessage) + "</p><p>Please return to the dashboard and try again.</p></body></html>"))
-	if writeError != nil {
-		log.Printf("Could not render minimal purchase error message: %v", writeError)
 	}
 }
 
@@ -124,14 +102,14 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	capitalThreshold, capitalThresholdError := strconv.ParseFloat(capitalThresholdText, 64)
 	if capitalThresholdError != nil {
 		log.Printf("Invalid capital threshold supplied: %v", capitalThresholdError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Invalid capital threshold. Please provide a numeric value.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Invalid capital threshold. Please provide a numeric value.")
 		return
 	}
 
 	targetProfitPercent, targetParseError := strconv.ParseFloat(request.FormValue("target_profit_percent"), 64)
 	if targetParseError != nil {
 		log.Printf("Invalid target profit percent supplied: %v", targetParseError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Invalid profit percent. Please provide a numeric value.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Invalid profit percent. Please provide a numeric value.")
 		return
 	}
 
@@ -141,19 +119,19 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	currentPricePerUnit, priceLookupError := server.BinancePriceService.GetCurrentPrice(currentPriceContext, request.FormValue("trading_pair_symbol"))
 	if priceLookupError != nil {
 		log.Printf("Could not fetch current price for purchase: %v", priceLookupError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Could not fetch current price for the selected pair. Please try again.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Could not fetch current price for the selected pair. Please try again.")
 		return
 	}
 
 	if currentPricePerUnit <= 0 {
 		log.Printf("Binance returned non-positive price for %s", request.FormValue("trading_pair_symbol"))
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Current price is unavailable for this pair. Please try again later.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Current price is unavailable for this pair. Please try again later.")
 		return
 	}
 
 	if capitalThreshold <= 0 {
 		log.Printf("Capital threshold less than or equal to zero: %f", capitalThreshold)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Capital threshold must be greater than zero.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Capital threshold must be greater than zero.")
 		return
 	}
 
@@ -171,7 +149,7 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	if buyError != nil {
 		server.logExecutionFailure(request.Context(), domain.TradingOperationTypeBuy, request.FormValue("trading_pair_symbol"), buyError)
 		log.Printf("Buy failed for %s: %v", request.FormValue("trading_pair_symbol"), buyError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Buy failed: "+buyError.Error())
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Buy failed: "+buyError.Error())
 		return
 	}
 
@@ -179,7 +157,7 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	if executedQuantityError != nil || executedQuantity <= 0 {
 		server.logExecutionFailure(request.Context(), domain.TradingOperationTypeBuy, request.FormValue("trading_pair_symbol"), errors.New("Binance returned an invalid executed quantity"))
 		log.Printf("Buy failed for %s due to invalid executed quantity: %v", request.FormValue("trading_pair_symbol"), executedQuantityError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Buy failed: Binance returned an invalid executed quantity.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Buy failed: Binance returned an invalid executed quantity.")
 		return
 	}
 
@@ -226,14 +204,14 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	_, creationError := server.TradingOperationService.RecordPurchaseOperation(contextWithTimeout, operation)
 	if creationError != nil {
 		log.Printf("Trading operation creation failed: %v", creationError)
-		http.Error(responseWriter, creationError.Error(), http.StatusBadRequest)
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, creationError.Error())
 		return
 	}
 
 	server.logExecutionSuccess(request.Context(), domain.TradingOperationTypeBuy, operation.TradingPairSymbol, purchaseUnitPrice, executedQuantity, buyOrderID)
 
 	if sellError != nil {
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Sell order could not be created: "+sellError.Error())
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Sell order could not be created: "+sellError.Error())
 		return
 	}
 
@@ -433,6 +411,16 @@ func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, r
 	}
 }
 
+func (server *Server) buildDashboardViewModelWithRequest(request *http.Request) (*DashboardViewModel, error) {
+	dashboardViewModel, loadError := server.buildDashboardViewModel(request.Context())
+	if loadError != nil {
+		return nil, loadError
+	}
+
+	server.applyPurchaseFormOverridesFromRequest(dashboardViewModel, request)
+	return dashboardViewModel, nil
+}
+
 func (server *Server) buildDashboardViewModel(requestContext context.Context) (*DashboardViewModel, error) {
         activeEnvironment := server.CredentialService.GetActiveEnvironmentConfiguration()
 
@@ -472,7 +460,62 @@ func (server *Server) buildDashboardViewModel(requestContext context.Context) (*
 		ActiveBinanceEnvironment:     activeEnvironment.EnvironmentName,
 		OpenOrders:                   openOrders,
 		OpenOrdersError:              openOrdersErrorMessage,
+		PurchaseTradingPairSymbol:    server.SettingsSummary.TradingPairSymbol,
+		PurchaseCapitalThreshold:     formatFloatForInputValue(server.SettingsSummary.CapitalThreshold),
+		PurchaseTargetProfitPercent:  formatFloatForInputValue(server.SettingsSummary.TargetProfitPercent),
 	}, nil
+}
+
+func (server *Server) applyPurchaseFormOverridesFromRequest(viewModel *DashboardViewModel, request *http.Request) {
+	queryValues := request.URL.Query()
+	if purchaseErrorMessage := queryValues.Get("purchase_error"); purchaseErrorMessage != "" {
+		viewModel.PurchaseErrorMessage = purchaseErrorMessage
+	}
+
+	if tradingPairSymbol := queryValues.Get("trading_pair_symbol"); tradingPairSymbol != "" {
+		viewModel.PurchaseTradingPairSymbol = tradingPairSymbol
+	}
+
+	if capitalThreshold := queryValues.Get("capital_threshold"); capitalThreshold != "" {
+		viewModel.PurchaseCapitalThreshold = capitalThreshold
+	}
+
+	if targetProfitPercent := queryValues.Get("target_profit_percent"); targetProfitPercent != "" {
+		viewModel.PurchaseTargetProfitPercent = targetProfitPercent
+	}
+}
+
+func (server *Server) redirectToDashboardWithPurchaseError(responseWriter http.ResponseWriter, request *http.Request, userFacingMessage string) {
+	queryValues := url.Values{}
+	if userFacingMessage != "" {
+		queryValues.Set("purchase_error", userFacingMessage)
+	}
+
+	tradingPairSymbol := request.FormValue("trading_pair_symbol")
+	if tradingPairSymbol != "" {
+		queryValues.Set("trading_pair_symbol", tradingPairSymbol)
+	}
+
+	capitalThreshold := request.FormValue("capital_threshold")
+	if capitalThreshold != "" {
+		queryValues.Set("capital_threshold", capitalThreshold)
+	}
+
+	targetProfitPercent := request.FormValue("target_profit_percent")
+	if targetProfitPercent != "" {
+		queryValues.Set("target_profit_percent", targetProfitPercent)
+	}
+
+	redirectPath := "/"
+	if encodedQuery := queryValues.Encode(); encodedQuery != "" {
+		redirectPath = redirectPath + "?" + encodedQuery
+	}
+
+	http.Redirect(responseWriter, request, redirectPath, http.StatusSeeOther)
+}
+
+func formatFloatForInputValue(value float64) string {
+	return fmt.Sprintf("%.2f", value)
 }
 
 func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, message string) {
@@ -501,6 +544,9 @@ type DashboardViewModel struct {
 	OpenOrders                   []service.BinanceOpenOrder
 	OpenOrdersError              string
 	PurchaseErrorMessage         string
+	PurchaseTradingPairSymbol    string
+	PurchaseCapitalThreshold     string
+	PurchaseTargetProfitPercent  string
 }
 
 type OperationHistoryViewModel struct {

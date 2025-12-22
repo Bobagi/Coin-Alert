@@ -7,24 +7,53 @@
     <title>Coin Alert • Error</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; display:flex; align-items:center; justify-content:center; min-height:100vh; }
-        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 24px; max-width: 560px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; }
+        header { background: linear-gradient(120deg, #06b6d4, #6366f1); padding: 24px; color: white; }
+        .container { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
         h1 { margin-top: 0; color: #f97316; }
         p { line-height: 1.6; }
-        a.button { display: inline-block; margin-top: 12px; padding: 10px 16px; background: linear-gradient(120deg, #06b6d4, #6366f1); color: white; border-radius: 10px; text-decoration: none; font-weight: 700; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; }
+        input, select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; }
+        .button { display: inline-flex; align-items: center; justify-content: center; padding: 10px 16px; background: linear-gradient(120deg, #22c55e, #16a34a); color: white; border-radius: 10px; text-decoration: none; font-weight: 700; border: none; cursor: pointer; }
+        .button.secondary { background: linear-gradient(120deg, #f97316, #ea580c); }
+        .form-grid { display: grid; gap: 12px; margin-top: 16px; }
+        .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+        .muted { color: #94a3b8; font-size: 0.95em; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>Action required</h1>
-        <p>{{.Message}}</p>
-        <p>Provide your Binance API Key and Secret Key below to enable the dashboard.</p>
-        <form action="/settings/binance" method="post" style="margin-top: 12px; display:grid; gap:10px;">
-            <input type="text" name="binance_api_key" placeholder="API Key" required style="padding:10px; border-radius:8px; border:1px solid #1f2937; background:#0b1220; color:#e2e8f0;">
-            <input type="password" name="binance_api_secret" placeholder="Secret Key" required style="padding:10px; border-radius:8px; border:1px solid #1f2937; background:#0b1220; color:#e2e8f0;">
-            <button type="submit" class="button" style="text-align:center;">Save and return</button>
-        </form>
-        <a class="button" href="/" style="background:linear-gradient(120deg, #f97316, #ea580c);">Back</a>
+    <header>
+        <h1>Coin Alert • Action required</h1>
+        <p>Secure the dashboard by saving your Binance credentials.</p>
+    </header>
+    <div class="container">
+        <div class="card">
+            <h1>Action required</h1>
+            <p>{{.Message}}</p>
+            <p class="muted">Provide your Binance API Key and Secret Key below to enable the dashboard actions.</p>
+            <form action="/settings/binance" method="post" class="form-grid">
+                <div>
+                    <label for="binance_environment">Binance environment</label>
+                    <select id="binance_environment" name="binance_environment">
+                        <option value="TESTNET">Testnet</option>
+                        <option value="PRODUCTION">Production</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="binance_api_key">API Key</label>
+                    <input id="binance_api_key" type="text" name="binance_api_key" placeholder="API Key" required>
+                </div>
+                <div>
+                    <label for="binance_api_secret">Secret Key</label>
+                    <input id="binance_api_secret" type="password" name="binance_api_secret" placeholder="Secret Key" required>
+                </div>
+                <div class="actions">
+                    <button type="submit" class="button">Save and return</button>
+                    <a class="button secondary" href="/">Back</a>
+                </div>
+            </form>
+        </div>
     </div>
 </body>
 </html>

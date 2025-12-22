@@ -16,16 +16,18 @@
         .badge.sell { background: rgba(239,68,68,0.15); color: #ef4444; }
         .badge.pending { background: rgba(251,191,36,0.15); color: #fbbf24; }
         .transaction-item { padding: 12px; border-bottom: 1px solid #1f2937; display: flex; justify-content: space-between; align-items: center; }
-        .pagination { display: flex; gap: 10px; margin-top: 12px; }
+        .pagination { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
         .pagination a { color: #22c55e; text-decoration: none; font-weight: 700; }
         .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: #0b1220; border: 1px solid #1f2937; margin-top: 4px; }
+        .button-link { display: inline-flex; align-items: center; justify-content: center; padding: 10px 16px; background: linear-gradient(120deg, #22c55e, #16a34a); color: white; border-radius: 10px; text-decoration: none; font-weight: 700; }
+        .button-link.secondary { background: linear-gradient(120deg, #06b6d4, #6366f1); }
     </style>
 </head>
 <body>
 <header>
     <h1>Operation History</h1>
     <p>Active environment: {{.ActiveBinanceEnvironment}} • {{.BinanceAPIBaseURL}}</p>
-    <a href="/" style="color:white; font-weight:700;">Back to dashboard</a>
+    <a href="/" class="button-link secondary">Back to dashboard</a>
 </header>
 <div class="container">
     <div class="card">
