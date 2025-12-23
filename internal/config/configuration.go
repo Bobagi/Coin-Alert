@@ -1,9 +1,11 @@
 package config
 
 import (
-	"log"
-	"os"
-	"strconv"
+        "log"
+        "os"
+        "strconv"
+
+        "coin-alert/internal/domain"
 )
 
 type ApplicationConfiguration struct {
@@ -20,20 +22,22 @@ type ApplicationConfiguration struct {
         EmailSMTPHost                string
         EmailSMTPPort                int
         BinanceAPIKey                string
-	BinanceAPISecret             string
-	BinanceAPIBaseURL            string
+        BinanceAPISecret             string
+        BinanceAPIBaseURL            string
+        BinanceEnvironment           string
 }
 
 func LoadApplicationConfiguration() ApplicationConfiguration {
         automaticSellIntervalMinutes := parseIntegerWithDefault("AUTO_SELL_INTERVAL_MINUTES", 60)
         dailyPurchaseIntervalMinutes := parseIntegerWithDefault("DAILY_PURCHASE_INTERVAL_MINUTES", 1440)
         emailSMTPPort := parseIntegerWithDefault("EMAIL_SMTP_PORT", 587)
-        binanceAPIBaseURL := resolveBinanceBaseURL()
+        binanceEnvironment := resolveBinanceEnvironment()
+        binanceAPIBaseURL := resolveBinanceBaseURL(binanceEnvironment)
         tradingCapitalThreshold := parseFloatWithDefault("TRADING_CAPITAL_THRESHOLD", 100)
         targetProfitPercent := parseFloatWithDefault("TARGET_PROFIT_PERCENT", 10)
 
-	configuration := ApplicationConfiguration{
-		ServerPort:                   getEnvironmentValueWithDefault("API_PORT", "5020"),
+        configuration := ApplicationConfiguration{
+                ServerPort:                   getEnvironmentValueWithDefault("API_PORT", "5020"),
                 DatabaseURL:                  buildDatabaseURL(),
                 ApplicationBaseURL:           getEnvironmentValueWithDefault("API_URL", "http://localhost:5020"),
                 AutomaticSellIntervalMinutes: automaticSellIntervalMinutes,
@@ -45,19 +49,20 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
                 EmailSenderPassword:          getEnvironmentValueWithDefault("EMAIL_SENDER_PASSWORD", ""),
                 EmailSMTPHost:                getEnvironmentValueWithDefault("EMAIL_SMTP_HOST", ""),
                 EmailSMTPPort:                emailSMTPPort,
-		BinanceAPIKey:                getEnvironmentValueWithDefault("BINANCE_API_KEY", ""),
-		BinanceAPISecret:             getEnvironmentValueWithDefault("BINANCE_API_SECRET", ""),
-		BinanceAPIBaseURL:            binanceAPIBaseURL,
-	}
+                BinanceAPIKey:                getEnvironmentValueWithDefault("BINANCE_API_KEY", ""),
+                BinanceAPISecret:             getEnvironmentValueWithDefault("BINANCE_API_SECRET", ""),
+                BinanceAPIBaseURL:            binanceAPIBaseURL,
+                BinanceEnvironment:           binanceEnvironment,
+        }
 
-	logNonSensitiveConfiguration(configuration)
+        logNonSensitiveConfiguration(configuration)
 
-	return configuration
+        return configuration
 }
 
 func logNonSensitiveConfiguration(configuration ApplicationConfiguration) {
         log.Printf(
-                "Loaded configuration (non-sensitive): serverPort=%s applicationBaseURL=%s automaticSellIntervalMinutes=%d dailyPurchaseIntervalMinutes=%d tradingPair=%s capitalThreshold=%.2f targetProfitPercent=%.2f emailSMTPHost=%s emailSMTPPort=%d",
+                "Loaded configuration (non-sensitive): serverPort=%s applicationBaseURL=%s automaticSellIntervalMinutes=%d dailyPurchaseIntervalMinutes=%d tradingPair=%s capitalThreshold=%.2f targetProfitPercent=%.2f emailSMTPHost=%s emailSMTPPort=%d binanceEnvironment=%s",
                 configuration.ServerPort,
                 configuration.ApplicationBaseURL,
                 configuration.AutomaticSellIntervalMinutes,
@@ -67,64 +72,79 @@ func logNonSensitiveConfiguration(configuration ApplicationConfiguration) {
                 configuration.TargetProfitPercent,
                 configuration.EmailSMTPHost,
                 configuration.EmailSMTPPort,
+                configuration.BinanceEnvironment,
         )
 }
 
-func resolveBinanceBaseURL() string {
-	useTestnetFlag := parseBooleanWithDefault("BINANCE_TESTNET", false)
-	explicitBaseURL := os.Getenv("BINANCE_API_BASE_URL")
+func resolveBinanceEnvironment() string {
+        explicitEnvironment := os.Getenv("BINANCE_ENVIRONMENT")
+        if explicitEnvironment != "" {
+                return domain.NormalizeBinanceEnvironment(explicitEnvironment)
+        }
 
-	if explicitBaseURL != "" {
-		return explicitBaseURL
-	}
+        useTestnetFlag := parseBooleanWithDefault("BINANCE_TESTNET", false)
+        if useTestnetFlag {
+                return domain.BinanceEnvironmentTestnet
+        }
 
-	if useTestnetFlag {
-		return "https://testnet.binance.vision"
-	}
+        return domain.BinanceEnvironmentProduction
+}
 
-	return "https://api.binance.com"
+func resolveBinanceBaseURL(environmentName string) string {
+        explicitBaseURL := os.Getenv("BINANCE_API_BASE_URL")
+
+        if explicitBaseURL != "" {
+                return explicitBaseURL
+        }
+
+        normalizedEnvironment := domain.NormalizeBinanceEnvironment(environmentName)
+        if normalizedEnvironment == domain.BinanceEnvironmentProduction {
+                return "https://api.binance.com"
+        }
+
+        return "https://testnet.binance.vision"
 }
 
 func buildDatabaseURL() string {
-	databaseUser := getEnvironmentValueWithDefault("DB_USER", "postgres")
-	databasePassword := getEnvironmentValueWithDefault("DB_PASSWORD", "postgres")
-	databaseName := getEnvironmentValueWithDefault("DB_NAME", "coin_alert")
-	databaseHost := getEnvironmentValueWithDefault("DB_HOST", "db")
-	databasePort := getEnvironmentValueWithDefault("DB_PORT", "5432")
+        databaseUser := getEnvironmentValueWithDefault("DB_USER", "postgres")
+        databasePassword := getEnvironmentValueWithDefault("DB_PASSWORD", "postgres")
+        databaseName := getEnvironmentValueWithDefault("DB_NAME", "coin_alert")
+        databaseHost := getEnvironmentValueWithDefault("DB_HOST", "db")
+        databasePort := getEnvironmentValueWithDefault("DB_PORT", "5432")
 
-	return "postgres://" + databaseUser + ":" + databasePassword + "@" + databaseHost + ":" + databasePort + "/" + databaseName + "?sslmode=disable"
+        return "postgres://" + databaseUser + ":" + databasePassword + "@" + databaseHost + ":" + databasePort + "/" + databaseName + "?sslmode=disable"
 }
 
 func parseIntegerWithDefault(variableName string, defaultValue int) int {
-	environmentValue := os.Getenv(variableName)
-	if environmentValue == "" {
-		return defaultValue
-	}
+        environmentValue := os.Getenv(variableName)
+        if environmentValue == "" {
+                return defaultValue
+        }
 
-	parsedInteger, parsingError := strconv.Atoi(environmentValue)
-	if parsingError != nil {
-		log.Printf("Invalid integer for %s, using default %d", variableName, defaultValue)
-		return defaultValue
-	}
+        parsedInteger, parsingError := strconv.Atoi(environmentValue)
+        if parsingError != nil {
+                log.Printf("Invalid integer for %s, using default %d", variableName, defaultValue)
+                return defaultValue
+        }
 
-	return parsedInteger
+        return parsedInteger
 }
 
 func parseBooleanWithDefault(variableName string, defaultValue bool) bool {
-	environmentValue := os.Getenv(variableName)
-	if environmentValue == "" {
-		return defaultValue
-	}
+        environmentValue := os.Getenv(variableName)
+        if environmentValue == "" {
+                return defaultValue
+        }
 
-	switch environmentValue {
-	case "true", "1", "yes", "on", "TRUE", "True":
-		return true
-	case "false", "0", "no", "off", "FALSE", "False":
-		return false
-	default:
-		log.Printf("Invalid boolean for %s, using default %t", variableName, defaultValue)
-		return defaultValue
-	}
+        switch environmentValue {
+        case "true", "1", "yes", "on", "TRUE", "True":
+                return true
+        case "false", "0", "no", "off", "FALSE", "False":
+                return false
+        default:
+                log.Printf("Invalid boolean for %s, using default %t", variableName, defaultValue)
+                return defaultValue
+        }
 }
 
 func parseFloatWithDefault(variableName string, defaultValue float64) float64 {
@@ -135,18 +155,18 @@ func parseFloatWithDefault(variableName string, defaultValue float64) float64 {
 
         parsedFloat, parsingError := strconv.ParseFloat(environmentValue, 64)
         if parsingError != nil {
-            log.Printf("Invalid decimal for %s, using default %.2f", variableName, defaultValue)
-            return defaultValue
+                log.Printf("Invalid decimal for %s, using default %.2f", variableName, defaultValue)
+                return defaultValue
         }
 
         return parsedFloat
 }
 
 func getEnvironmentValueWithDefault(variableName string, defaultValue string) string {
-	environmentValue := os.Getenv(variableName)
-	if environmentValue == "" {
-		return defaultValue
-	}
+        environmentValue := os.Getenv(variableName)
+        if environmentValue == "" {
+                return defaultValue
+        }
 
-	return environmentValue
+        return environmentValue
 }

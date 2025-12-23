@@ -9,11 +9,13 @@ import (
         "net/url"
         "strconv"
         "time"
+
+        "coin-alert/internal/domain"
 )
 
 type BinancePriceService struct {
-        APIBaseURL string
-        HTTPClient *http.Client
+        EnvironmentConfiguration domain.BinanceEnvironmentConfiguration
+        HTTPClient               *http.Client
 }
 
 type binanceTickerPriceResponse struct {
@@ -21,15 +23,19 @@ type binanceTickerPriceResponse struct {
         Price  string `json:"price"`
 }
 
-func NewBinancePriceService(apiBaseURL string) *BinancePriceService {
+func NewBinancePriceService(environmentConfiguration domain.BinanceEnvironmentConfiguration) *BinancePriceService {
         return &BinancePriceService{
-                APIBaseURL: apiBaseURL,
-                HTTPClient: &http.Client{Timeout: 8 * time.Second},
+                EnvironmentConfiguration: environmentConfiguration,
+                HTTPClient:               &http.Client{Timeout: 8 * time.Second},
         }
 }
 
+func (service *BinancePriceService) UpdateEnvironmentConfiguration(newConfiguration domain.BinanceEnvironmentConfiguration) {
+        service.EnvironmentConfiguration = newConfiguration
+}
+
 func (service *BinancePriceService) GetCurrentPrice(requestContext context.Context, tradingPairSymbol string) (float64, error) {
-        tickerEndpoint, urlBuildError := url.Parse(service.APIBaseURL)
+        tickerEndpoint, urlBuildError := url.Parse(service.EnvironmentConfiguration.RESTBaseURL)
         if urlBuildError != nil {
                 return 0, urlBuildError
         }
@@ -41,32 +47,32 @@ func (service *BinancePriceService) GetCurrentPrice(requestContext context.Conte
 
         tickerRequest, requestBuildError := http.NewRequestWithContext(requestContext, http.MethodGet, tickerEndpoint.String(), nil)
         if requestBuildError != nil {
-            return 0, requestBuildError
+                return 0, requestBuildError
         }
 
         tickerResponse, responseError := service.HTTPClient.Do(tickerRequest)
         if responseError != nil {
-            return 0, responseError
+                return 0, responseError
         }
         defer tickerResponse.Body.Close()
 
         if tickerResponse.StatusCode != http.StatusOK {
-            return 0, fmt.Errorf("Binance price endpoint returned status %d", tickerResponse.StatusCode)
+                return 0, fmt.Errorf("Binance price endpoint returned status %d", tickerResponse.StatusCode)
         }
 
         var parsedResponse binanceTickerPriceResponse
         decodeError := json.NewDecoder(tickerResponse.Body).Decode(&parsedResponse)
         if decodeError != nil {
-            return 0, decodeError
+                return 0, decodeError
         }
 
         if parsedResponse.Price == "" {
-            return 0, errors.New("Binance price response did not include a price")
+                return 0, errors.New("Binance price response did not include a price")
         }
 
         parsedPrice, priceParseError := parseDecimalStringToFloat(parsedResponse.Price)
         if priceParseError != nil {
-            return 0, priceParseError
+                return 0, priceParseError
         }
 
         return parsedPrice, nil

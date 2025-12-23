@@ -13,6 +13,7 @@ import (
 
 	"coin-alert/internal/config"
 	"coin-alert/internal/database"
+	"coin-alert/internal/domain"
 	"coin-alert/internal/httpserver"
 	"coin-alert/internal/repository"
 	"coin-alert/internal/service"
@@ -33,18 +34,28 @@ func main() {
 	scheduledOperationRepository := repository.NewPostgresScheduledTradingOperationRepository(postgresConnector.Database)
 	executionRepository := repository.NewPostgresTradingOperationExecutionRepository(postgresConnector.Database)
 
+	initialEnvironmentConfiguration := domain.BinanceEnvironmentConfiguration{
+		EnvironmentName: applicationConfiguration.BinanceEnvironment,
+		RESTBaseURL:     applicationConfiguration.BinanceAPIBaseURL,
+		APIKey:          applicationConfiguration.BinanceAPIKey,
+		APISecret:       applicationConfiguration.BinanceAPISecret,
+	}
+
 	tradingOperationService := service.NewTradingOperationService(tradingOperationRepository, applicationConfiguration.TradingPairSymbol, applicationConfiguration.TradingCapitalThreshold, applicationConfiguration.TargetProfitPercent)
 	emailAlertService := service.NewEmailAlertService(emailAlertRepository, applicationConfiguration.EmailSenderAddress, applicationConfiguration.EmailSenderPassword, applicationConfiguration.EmailSMTPHost, applicationConfiguration.EmailSMTPPort)
 	tradingScheduleService := service.NewTradingScheduleService(scheduledOperationRepository, executionRepository, applicationConfiguration.AutomaticSellIntervalMinutes, applicationConfiguration.TradingPairSymbol, applicationConfiguration.TradingCapitalThreshold, applicationConfiguration.TargetProfitPercent)
-	binancePriceService := service.NewBinancePriceService(applicationConfiguration.BinanceAPIBaseURL)
+	binancePriceService := service.NewBinancePriceService(initialEnvironmentConfiguration)
 	automationService := service.NewTradingAutomationService(tradingOperationService, binancePriceService, tradingScheduleService, applicationConfiguration.TradingPairSymbol, applicationConfiguration.AutomaticSellIntervalMinutes)
-	binanceCredentialValidator := service.NewBinanceCredentialValidator(applicationConfiguration.BinanceAPIBaseURL)
-	credentialService := service.NewCredentialService(credentialRepository, binanceCredentialValidator, applicationConfiguration.BinanceAPIKey, applicationConfiguration.BinanceAPISecret)
+	binanceCredentialValidator := service.NewBinanceCredentialValidator(initialEnvironmentConfiguration.RESTBaseURL)
+	credentialService := service.NewCredentialService(credentialRepository, binanceCredentialValidator, initialEnvironmentConfiguration)
 	credentialService.InitializeCredentials(context.Background())
-	binanceSymbolService := service.NewBinanceSymbolService(applicationConfiguration.BinanceAPIBaseURL)
+	activeEnvironment := credentialService.GetActiveEnvironmentConfiguration()
+	binancePriceService.UpdateEnvironmentConfiguration(activeEnvironment)
+	binanceSymbolService := service.NewBinanceSymbolService(activeEnvironment)
+	binanceTradingService := service.NewBinanceTradingService(activeEnvironment)
 	initialScheduleContext, initialScheduleCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer initialScheduleCancel()
-	automationService.ScheduleSellIfOpenPositionExists(initialScheduleContext)
+	automationService.EvaluateAndSellProfitableOperations(initialScheduleContext)
 
 	parsedTemplates, templateError := parseHTMLTemplates("templates")
 	if templateError != nil {
@@ -54,14 +65,15 @@ func main() {
 	dashboardSettingsSummary := httpserver.DashboardSettingsSummary{
 		AutomaticSellIntervalMinutes: applicationConfiguration.AutomaticSellIntervalMinutes,
 		DailyPurchaseIntervalMinutes: applicationConfiguration.DailyPurchaseIntervalMinutes,
-		BinanceAPIBaseURL:            applicationConfiguration.BinanceAPIBaseURL,
+		BinanceAPIBaseURL:            activeEnvironment.RESTBaseURL,
+		ActiveBinanceEnvironment:     activeEnvironment.EnvironmentName,
 		ApplicationBaseURL:           applicationConfiguration.ApplicationBaseURL,
 		TradingPairSymbol:            applicationConfiguration.TradingPairSymbol,
 		CapitalThreshold:             applicationConfiguration.TradingCapitalThreshold,
 		TargetProfitPercent:          applicationConfiguration.TargetProfitPercent,
 	}
 
-	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, credentialService, binanceSymbolService, binancePriceService, tradingScheduleService, dashboardSettingsSummary, parsedTemplates)
+	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, credentialService, binanceSymbolService, binancePriceService, binanceTradingService, tradingScheduleService, dashboardSettingsSummary, parsedTemplates)
 	router := server.RegisterRoutes()
 
 	applicationContext, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -94,8 +106,13 @@ func main() {
 }
 
 func parseHTMLTemplates(templatesDirectory string) (*template.Template, error) {
+	templateFunctions := template.FuncMap{
+		"addOne":      func(value int) int { return value + 1 },
+		"subtractOne": func(value int) int { return value - 1 },
+	}
+
 	rootTemplatesPattern := filepath.Join(templatesDirectory, "*.html")
-	parsedRootTemplates, rootTemplatesParseError := template.ParseGlob(rootTemplatesPattern)
+	parsedRootTemplates, rootTemplatesParseError := template.New("root").Funcs(templateFunctions).ParseGlob(rootTemplatesPattern)
 	if rootTemplatesParseError != nil {
 		return nil, rootTemplatesParseError
 	}

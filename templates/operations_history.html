@@ -1,0 +1,143 @@
+{{define "operations_history.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Coin Alert - Operation History</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; }
+        header { background: linear-gradient(120deg, #06b6d4, #6366f1); padding: 20px; color: white; }
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); margin-bottom: 16px; }
+        .muted { color: #94a3b8; font-size: 0.95em; }
+        .badge { padding: 6px 10px; border-radius: 999px; font-weight: 700; }
+        .badge.buy { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .badge.sell { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .badge.pending { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .transaction-item { padding: 12px; border-bottom: 1px solid #1f2937; display: flex; justify-content: space-between; align-items: center; }
+        .pagination { display: flex; gap: 10px; margin-top: 12px; }
+        .pagination a { color: #22c55e; text-decoration: none; font-weight: 700; }
+        .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: #0b1220; border: 1px solid #1f2937; margin-top: 4px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Operation History</h1>
+    <p>Active environment: {{.ActiveBinanceEnvironment}} • {{.BinanceAPIBaseURL}}</p>
+    <a href="/" style="color:white; font-weight:700;">Back to dashboard</a>
+</header>
+<div class="container">
+    <div class="card">
+        <h2>Open and pending operations</h2>
+        {{if .OpenOperations}}
+            {{range .OpenOperations}}
+            <div class="transaction-item">
+                <div>
+                    <div class="badge pending">OPEN</div>
+                    <div style="font-weight:700; margin-top:6px;">{{.TradingPairSymbol}}</div>
+                    <div class="muted">Purchased at {{.PurchaseTimestamp.Format "2006-01-02 15:04"}} ({{printf "%.6f" .PurchasePricePerUnit}})</div>
+                    <div class="muted">Allocated {{printf "%.2f" .PurchaseValueTotal}}</div>
+                    {{if .BuyOrderIdentifier}}
+                        <div class="muted">Buy order ID: {{.BuyOrderIdentifier}}</div>
+                    {{else}}
+                        <div class="muted" style="color:#ef4444;">Buy order missing</div>
+                    {{end}}
+                    {{if .SellOrderIdentifier}}
+                        <div class="muted">Sell order ID: {{.SellOrderIdentifier}}</div>
+                    {{else}}
+                        <div class="muted" style="color:#fbbf24;">Sell order pending</div>
+                    {{end}}
+                    {{if .SellTargetPricePerUnit}}
+                        <div class="muted">Target sell price {{printf "%.6f" .SellTargetPricePerUnit}}</div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+        {{else}}
+            <p class="muted">No open trades.</p>
+        {{end}}
+        <div class="pagination">
+            {{if .HasPreviousOperationPage}}
+                <a href="/operations/history?operations_page={{subtractOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}">Previous</a>
+            {{end}}
+            {{if .HasNextOperationPage}}
+                <a href="/operations/history?operations_page={{addOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}">Next</a>
+            {{end}}
+        </div>
+    </div>
+    <div class="card">
+        <h2>Completed operations</h2>
+        {{if .CompletedOperations}}
+            {{range .CompletedOperations}}
+            <div class="transaction-item">
+                <div>
+                    <div class="badge sell">SOLD</div>
+                    <div style="font-weight:700; margin-top:6px;">{{.TradingPairSymbol}}</div>
+                    <div class="muted">Purchased at {{.PurchaseTimestamp.Format "2006-01-02 15:04"}} ({{printf "%.6f" .PurchasePricePerUnit}})</div>
+                    {{if .SellTimestamp}}
+                        <div class="muted">Sold at {{.SellTimestamp.Format "2006-01-02 15:04"}}</div>
+                    {{end}}
+                    {{if .SellPricePerUnit}}
+                        <div class="muted">Sell price {{printf "%.6f" .SellPricePerUnit}}</div>
+                    {{end}}
+                    {{if .SellOrderIdentifier}}
+                        <div class="muted">Sell order ID: {{.SellOrderIdentifier}}</div>
+                    {{end}}
+                    {{if .BuyOrderIdentifier}}
+                        <div class="muted">Buy order ID: {{.BuyOrderIdentifier}}</div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+        {{else}}
+            <p class="muted">No completed trades yet.</p>
+        {{end}}
+        <div class="pagination">
+            {{if .HasPreviousOperationPage}}
+                <a href="/operations/history?operations_page={{subtractOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}">Previous</a>
+            {{end}}
+            {{if .HasNextOperationPage}}
+                <a href="/operations/history?operations_page={{addOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}">Next</a>
+            {{end}}
+        </div>
+    </div>
+    <div class="card">
+        <h2>Execution attempts (buy and sell)</h2>
+        {{if .ExecutionAttempts}}
+            {{range .ExecutionAttempts}}
+            <div class="transaction-item">
+                <div>
+                    {{if .Success}}
+                        <div class="badge buy">SUCCESS</div>
+                    {{else}}
+                        <div class="badge sell">FAILED</div>
+                    {{end}}
+                    <div style="font-weight:700; margin-top:6px;">{{.OperationType}} on {{.TradingPairSymbol}}</div>
+                    <div class="muted">Executed at {{.ExecutedAt}}</div>
+                    {{if .OrderIdentifier}}
+                        <div class="muted">Order ID: {{.OrderIdentifier}}</div>
+                    {{end}}
+                    <div class="muted">Unit: {{printf "%.6f" .UnitPrice}} • Qty: {{printf "%.6f" .Quantity}} • Total: {{printf "%.2f" .TotalValue}}</div>
+                    {{if .ErrorMessage}}
+                        <div class="muted" style="color:#ef4444;">Error: {{.ErrorMessage}}</div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+        {{else}}
+            <p class="muted">No execution attempts recorded.</p>
+        {{end}}
+        <div class="pagination">
+            {{if .HasPreviousExecutionPage}}
+                <a href="/operations/history?operations_page={{.OperationPageNumber}}&executions_page={{subtractOne .ExecutionPageNumber}}">Previous</a>
+            {{end}}
+            {{if .HasNextExecutionPage}}
+                <a href="/operations/history?operations_page={{.OperationPageNumber}}&executions_page={{addOne .ExecutionPageNumber}}">Next</a>
+            {{end}}
+        </div>
+    </div>
+</div>
+</body>
+</html>
+{{end}}

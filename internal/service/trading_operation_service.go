@@ -32,31 +32,40 @@ func (service *TradingOperationService) UpdateCapitalThreshold(newCapitalThresho
 }
 
 func (service *TradingOperationService) RecordPurchaseOperation(contextWithTimeout context.Context, operation domain.TradingOperation) (int64, error) {
-        validationError := service.validatePurchaseOperation(operation)
-        if validationError != nil {
-                return 0, validationError
-        }
+	validationError := service.validatePurchaseOperation(operation)
+	if validationError != nil {
+		return 0, validationError
+	}
 
 	allocationCheckError := service.ensureCapitalThresholdNotExceeded(contextWithTimeout, operation)
 	if allocationCheckError != nil {
 		return 0, allocationCheckError
 	}
 
-        operation.Identifier = 0
-        operation.Status = domain.TradingOperationStatusOpen
-        operation.PurchaseTimestamp = time.Now()
-        if operation.TargetProfitPercent <= 0 {
-                operation.TargetProfitPercent = service.ProfitTargetPercent
-        }
+	operation.Identifier = 0
+	operation.Status = domain.TradingOperationStatusOpen
+	operation.PurchaseTimestamp = time.Now()
+	if operation.TargetProfitPercent <= 0 {
+		operation.TargetProfitPercent = service.ProfitTargetPercent
+	}
 
-        targetSellPricePerUnit := operation.TargetSellPricePerUnit()
-        operation.SellTargetPricePerUnit = &targetSellPricePerUnit
+	targetSellPricePerUnit := operation.TargetSellPricePerUnit()
+	operation.SellTargetPricePerUnit = &targetSellPricePerUnit
 
-        return service.TradingOperationRepository.CreatePurchaseOperation(contextWithTimeout, operation)
+	return service.TradingOperationRepository.CreatePurchaseOperation(contextWithTimeout, operation)
 }
 
 func (service *TradingOperationService) ListOperations(contextWithTimeout context.Context, limit int) ([]domain.TradingOperation, error) {
 	return service.TradingOperationRepository.ListRecentOperations(contextWithTimeout, limit)
+}
+
+func (service *TradingOperationService) ListOperationsPage(contextWithTimeout context.Context, limit int, pageNumber int) ([]domain.TradingOperation, error) {
+	if pageNumber < 1 {
+		pageNumber = 1
+	}
+
+	offset := (pageNumber - 1) * limit
+	return service.TradingOperationRepository.ListOperationsPage(contextWithTimeout, limit, offset)
 }
 
 func (service *TradingOperationService) CloseOperationsThatReachedTargetPrice(contextWithTimeout context.Context, currentPricePerUnit float64) error {
@@ -78,7 +87,11 @@ func (service *TradingOperationService) CloseOperationsThatReachedTargetPrice(co
 }
 
 func (service *TradingOperationService) ListOpenOperations(contextWithTimeout context.Context) ([]domain.TradingOperation, error) {
-	return service.TradingOperationRepository.ListOpenOperations(contextWithTimeout)
+        return service.TradingOperationRepository.ListOpenOperations(contextWithTimeout)
+}
+
+func (service *TradingOperationService) MarkOperationAsSold(contextWithTimeout context.Context, operationIdentifier int64, sellPricePerUnit float64) error {
+        return service.TradingOperationRepository.UpdateOperationAsSold(contextWithTimeout, operationIdentifier, sellPricePerUnit)
 }
 
 func (service *TradingOperationService) FindOldestOpenOperationForPair(contextWithTimeout context.Context, tradingPairSymbol string) (*domain.TradingOperation, error) {
