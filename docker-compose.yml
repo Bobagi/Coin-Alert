@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     ports:
-      - "${EXTERNAL_DB_PORT}:${DB_PORT}"
+      - "${EXTERNAL_DB_PORT:-5432}:${DB_PORT}"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,76 +23,26 @@ services:
         max-size: "50m"
         max-file: "7"
 
-  api:
-    build: .
+  migrate:
+    image: migrate/migrate:v4.17.1
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["migrate -path /migrations -database postgres://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}?sslmode=disable up"]
+    volumes:
+      - ./migrations:/migrations
     depends_on:
       db:
         condition: service_healthy
+    restart: "no"
+
+  app:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     env_file:
       - .env
-    volumes:
-      - .:/app
     ports:
-      - "${API_PORT}:5020"
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "7"
-
-  send_email:
-    build: .
-    depends_on:
-      api:
-        condition: service_started
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    entrypoint: []
-    command: ["python", "scripts/send_email.py"]
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "7"
-
-  auto_sell:
-    build: .
-    restart: always
-    depends_on:
-      db:
-        condition: service_healthy
-      api:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      API_URL: ${API_URL}
-    volumes:
-      - .:/app
-    entrypoint: []
-    command: ["python", "scripts/auto_sell.py"]
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "7"
-
-  daily_buy:
-    build: .
-    restart: always
-    depends_on:
-      api:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      API_URL: ${API_URL}
-    volumes:
-      - .:/app
-    entrypoint: []
-    command: ["python", "scripts/daily_buy.py"]
+      - "${API_PORT:-5020}:${API_PORT:-5020}"
     logging:
       driver: json-file
       options:

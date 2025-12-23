@@ -1,20 +1,15 @@
-FROM python:3.11-slim
-
-ENV API_PORT=5020
-ENV PYTHONUNBUFFERED=1
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-       build-essential libpq-dev \
-  && rm -rf /var/lib/apt/lists/*
-
+# Build stage
+FROM golang:1.22-alpine AS builder
 WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /bin/coin-alert ./cmd/server
 
-COPY requirements.txt ./
-RUN pip install --upgrade pip \
-  && pip install --no-cache-dir -r requirements.txt
-
-COPY . ./
-
-ENTRYPOINT ["sh", "-c", "python migrate.py && exec \"$@\"", "--"]
-CMD ["python", "app.py"]
+# Run stage
+FROM gcr.io/distroless/base-debian12
+WORKDIR /app
+COPY --from=builder /bin/coin-alert /bin/coin-alert
+COPY templates ./templates
+EXPOSE 5020
+ENTRYPOINT ["/bin/coin-alert"]

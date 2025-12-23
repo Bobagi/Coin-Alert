@@ -1,0 +1,384 @@
+{{define "index.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coin Alert - Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; }
+        header { background: linear-gradient(120deg, #06b6d4, #6366f1); padding: 24px; color: white; }
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+        h2 { margin-top: 0; }
+        label { display: block; margin-bottom: 4px; font-weight: 600; }
+        input, textarea { width: 100%; padding: 10px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #334155; background: #0b1220; color: #e2e8f0; }
+        button { background: linear-gradient(120deg, #22c55e, #16a34a); border: none; padding: 12px 16px; border-radius: 10px; color: white; font-weight: 700; cursor: pointer; width: 100%; }
+        button.secondary { background: linear-gradient(120deg, #ef4444, #dc2626); }
+        .transactions { max-height: 420px; overflow-y: auto; }
+        .transaction-item { padding: 12px; border-bottom: 1px solid #1f2937; display: flex; justify-content: space-between; align-items: center; }
+        .badge { padding: 6px 10px; border-radius: 999px; font-weight: 700; }
+        .badge.buy { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .badge.sell { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .muted { color: #94a3b8; font-size: 0.9em; }
+        .notes { margin-top: 8px; color: #e2e8f0; }
+        .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: #0b1220; border: 1px solid #1f2937; margin-top: 4px; }
+        .row { display: flex; flex-wrap: wrap; gap: 12px; }
+        .row > div { flex: 1; min-width: 220px; }
+        .link-button { color: #22c55e; font-weight: 700; cursor: pointer; text-decoration: none; }
+        .status-chip { display: inline-flex; align-items: center; gap: 8px; background: rgba(34,197,94,0.12); color: #22c55e; padding: 6px 10px; border-radius: 999px; font-weight: 700; }
+        .status-chip.warning { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .dropdown { position: relative; }
+        .dropdown-list { position: absolute; top: 100%; left: 0; right: 0; background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; max-height: 220px; overflow-y: auto; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+        .dropdown-item { padding: 10px 12px; cursor: pointer; }
+        .dropdown-item:hover { background: #111827; }
+        .dropdown-item.active { background: rgba(99,102,241,0.2); }
+        .loading-indicator { display: inline-flex; align-items: center; gap: 8px; color: #94a3b8; font-size: 0.9em; }
+        .loading-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
+    </style>
+</head>
+<body x-data="dashboard({{if .IsBinanceConfigured}}true{{else}}false{{end}})" x-init="initDashboard()">
+<header>
+    <h1>Coin Alert • Trades and Alerts</h1>
+    <p>Rewritten in Go with SOLID boundaries, automation, and safer credentials.</p>
+</header>
+<div class="container">
+    <div class="grid">
+        <div class="card" x-data="credentialsPanel({{if .IsBinanceConfigured}}true{{else}}false{{end}})">
+            <h2>Binance Credentials</h2>
+            <p class="muted">Apply your API Key and Secret Key to enable automations and trades.</p>
+            <form action="/settings/binance" method="post">
+                <label for="binance_api_key">API Key</label>
+                <input id="binance_api_key" name="binance_api_key" type="text" placeholder="Paste your API Key" required>
+                <label for="binance_api_secret">Secret Key</label>
+                <input id="binance_api_secret" name="binance_api_secret" type="password" placeholder="Paste your Secret Key" required>
+                <button type="submit">Save credentials</button>
+            </form>
+            <div class="row" style="margin-top: 12px;">
+                <div>
+                    <div class="muted">Current API Key</div>
+                    <div class="pill">{{.BinanceAPIKeyMasked}}</div>
+                </div>
+                <div>
+                    <div class="muted">Current Secret Key</div>
+                    <div class="pill">{{.BinanceAPISecretMasked}}</div>
+                </div>
+            </div>
+            <div style="margin-top: 12px;">
+                <div class="status-chip" x-show="isCredentialsValidated">Credentials validated</div>
+                <div class="status-chip warning" x-show="!isCredentialsValidated">Pending validation</div>
+            </div>
+            <div style="margin-top: 12px; display:flex; gap:12px; flex-wrap:wrap;">
+                <button type="button" x-on:click.prevent="revalidateCredentials()" x-bind:disabled="isValidationInProgress" style="width:auto; padding:10px 14px;">
+                    <span x-show="!isValidationInProgress">Revalidate keys</span>
+                    <span x-show="isValidationInProgress">Validating...</span>
+                </button>
+                <p class="muted" x-text="validationMessage" x-show="validationMessage"></p>
+                <p class="muted" style="color:#ef4444;" x-text="validationError" x-show="validationError"></p>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Record purchase</h2>
+            <p class="muted">One trading pair drives both buying and selling. Each purchase reserves capital until auto-sold at your profit target.</p>
+            <form action="/operations/purchase" method="post">
+                <label for="trading_pair_symbol">Trading pair</label>
+                <div class="dropdown" x-data="symbolDropdown('trading_pair_symbol')">
+                    <input id="trading_pair_symbol" name="trading_pair_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. BTCUSDT" autocomplete="off" required value="{{.TradingPairSymbol}}">
+                    <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
+                        <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
+                            <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
+                        </template>
+                    </div>
+                </div>
+                <label for="capital_threshold">Capital threshold</label>
+                <input id="capital_threshold" name="capital_threshold" type="number" step="0.01" min="0.01" value="{{printf "%.2f" .CapitalThreshold}}" required>
+                <label for="target_profit_percent">Profit target (%)</label>
+                <input id="target_profit_percent" name="target_profit_percent" type="number" step="0.01" min="0.01" value="{{printf "%.2f" .TargetProfitPercent}}" required>
+                <button type="submit">Save purchase</button>
+            </form>
+        </div>
+        <div class="card">
+            <h2>Send email alert</h2>
+            <form action="/alerts/email" method="post">
+                <label for="recipient_address">Recipient</label>
+                <input id="recipient_address" name="recipient_address" type="email" placeholder="user@domain.com" required>
+                <label for="alert_trading_pair_symbol">Trading pair or currency</label>
+                <input id="alert_trading_pair_symbol" name="alert_trading_pair_symbol" placeholder="E.g. BTCUSDT or BTC" required>
+                <label for="alert_threshold">Threshold value</label>
+                <input id="alert_threshold" name="alert_threshold" type="number" step="0.01" min="0.01" placeholder="Price to watch" required>
+                <button type="submit">Send alert</button>
+            </form>
+        </div>
+    </div>
+    <div class="card" style="margin-top: 20px;">
+        <h2>Automation configuration</h2>
+        <p class="muted">Single trading pair with shared capital and profit rules.</p>
+        <div class="row">
+            <div>
+                <div class="muted">Trading pair</div>
+                <div class="pill">{{.TradingPairSymbol}}</div>
+            </div>
+            <div>
+                <div class="muted">Capital threshold</div>
+                <div class="pill">{{printf "%.2f" .CapitalThreshold}}</div>
+            </div>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+            <div>
+                <div class="muted">Profit target (%)</div>
+                <div class="pill">{{printf "%.2f" .TargetProfitPercent}}</div>
+            </div>
+            <div>
+                <div class="muted">Automatic sell interval (minutes)</div>
+                <div class="pill">{{.AutomaticSellIntervalMinutes}}</div>
+            </div>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+            <div>
+                <div class="muted">Binance API base URL</div>
+                <div class="pill">{{.BinanceAPIBaseURL}}</div>
+            </div>
+            <div>
+                <div class="muted">Application base URL</div>
+                <div class="pill">{{.ApplicationBaseURL}}</div>
+            </div>
+        </div>
+    </div>
+    <div class="grid" style="margin-top: 20px;">
+        <div class="card">
+            <h2>Next scheduled operation</h2>
+            {{if .NextScheduledOperation}}
+            <p class="muted">This operation is persisted and will execute automatically or on demand.</p>
+            <div class="row">
+                <div>
+                    <div class="muted">Type</div>
+                    <div class="pill">{{.NextScheduledOperation.OperationType}}</div>
+                </div>
+                <div>
+                    <div class="muted">Pair</div>
+                    <div class="pill">{{.NextScheduledOperation.TradingPairSymbol}}</div>
+                </div>
+            </div>
+            <div class="row" style="margin-top:12px;">
+                <div>
+                    <div class="muted">Capital threshold</div>
+                    <div class="pill">{{printf "%.2f" .NextScheduledOperation.CapitalThreshold}}</div>
+                </div>
+                <div>
+                    <div class="muted">Target profit (%)</div>
+                    <div class="pill">{{printf "%.2f" .NextScheduledOperation.TargetProfitPercent}}</div>
+                </div>
+            </div>
+            <div class="row" style="margin-top:12px;">
+                <div>
+                    <div class="muted">Scheduled time</div>
+                    <div class="pill">{{.NextScheduledOperation.ScheduledExecutionTime}}</div>
+                </div>
+                <div>
+                    <div class="muted">Status</div>
+                    <div class="pill">{{.NextScheduledOperation.Status}}</div>
+                </div>
+            </div>
+            <form action="/operations/execute-next" method="post" style="margin-top:16px;">
+                <button type="submit">Execute next operation now</button>
+            </form>
+            {{else}}
+            <p class="muted">No scheduled operation is registered yet. A new one will be created on the next purchase or automation cycle.</p>
+            {{end}}
+        </div>
+        <div class="card">
+            <h2>Scheduled operations</h2>
+            {{if .ScheduledOperations}}
+            <div class="transactions">
+                {{range .ScheduledOperations}}
+                <div class="transaction-item">
+                    <div>
+                        <div><strong>{{.OperationType}}</strong> on {{.TradingPairSymbol}}</div>
+                        <div class="muted">Scheduled: {{.ScheduledExecutionTime}}</div>
+                        <div class="muted">Threshold: {{printf "%.2f" .CapitalThreshold}} • Target: {{printf "%.2f" .TargetProfitPercent}}%</div>
+                    </div>
+                    <div class="badge" style="background:rgba(99,102,241,0.15); color:#a5b4fc;">{{.Status}}</div>
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <p class="muted">No pending operations.</p>
+            {{end}}
+        </div>
+        <div class="card">
+            <h2>Execution history</h2>
+            {{if .ExecutionHistory}}
+            <div class="transactions">
+                {{range .ExecutionHistory}}
+                <div class="transaction-item">
+                    <div>
+                        <div><strong>{{.OperationType}}</strong> on {{.TradingPairSymbol}}</div>
+                        <div class="muted">Executed at {{.ExecutedAt}}</div>
+                        <div class="muted">Unit: {{printf "%.6f" .UnitPrice}} • Qty: {{printf "%.6f" .Quantity}} • Total: {{printf "%.2f" .TotalValue}}</div>
+                        {{if .ErrorMessage}}
+                        <div class="muted" style="color:#ef4444;">Error: {{.ErrorMessage}}</div>
+                        {{end}}
+                    </div>
+                    {{if .Success}}
+                    <div class="badge buy">SUCCESS</div>
+                    {{else}}
+                    <div class="badge sell">FAILED</div>
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <p class="muted">No executions recorded yet.</p>
+            {{end}}
+        </div>
+    </div>
+    <div class="card" style="margin-top: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>Recent operations</h2>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div class="loading-indicator" x-show="isRefreshingTransactions" x-transition>
+                    <span class="loading-dot"></span>
+                    <span>Refreshing...</span>
+                </div>
+                <button type="button" class="link-button" style="border:none; background:none; padding:0;" x-bind:disabled="isRefreshingTransactions" x-on:click.prevent="refreshTransactions()">
+                    <span x-show="!isRefreshingTransactions">Reload</span>
+                    <span x-show="isRefreshingTransactions">Please wait...</span>
+                </button>
+            </div>
+        </div>
+        <div class="transactions" id="transactions-list">
+            {{template "partials/transactions.html" .TradingOperations}}
+        </div>
+        <p class="muted" x-show="lastTransactionsRefreshMessage" x-text="lastTransactionsRefreshMessage" style="margin-top:8px;"></p>
+        <p class="muted" x-show="transactionsRefreshError" x-text="transactionsRefreshError" style="margin-top:8px; color:#ef4444;"></p>
+    </div>
+</div>
+<script>
+    function dashboard(initialValidationStatus) {
+        return {
+            isRefreshingTransactions: false,
+            lastTransactionsRefreshMessage: '',
+            transactionsRefreshError: '',
+            initialValidationStatus,
+            initDashboard() {
+                Alpine.store('symbolStore', { symbols: [] });
+                this.loadSymbols();
+            },
+            async loadSymbols() {
+                try {
+                    const response = await fetch('/binance/symbols');
+                    if (!response.ok) return;
+                    const body = await response.json();
+                    Alpine.store('symbolStore').symbols = body.symbols || [];
+                } catch (error) {
+                    console.error('Could not load Binance symbols', error);
+                }
+            },
+            async refreshTransactions() {
+                this.isRefreshingTransactions = true;
+                this.transactionsRefreshError = '';
+                try {
+                    const response = await fetch('/operations');
+                    if (!response.ok) {
+                        this.transactionsRefreshError = 'Unable to refresh trades right now.';
+                        return;
+                    }
+                    const html = await response.text();
+                    document.getElementById('transactions-list').innerHTML = html;
+                    const now = new Date();
+                    this.lastTransactionsRefreshMessage = `Updated at ${now.toLocaleTimeString('en-US')}`;
+                } catch (error) {
+                    this.transactionsRefreshError = 'Failed to reload trades.';
+                    console.error('Could not reload trades', error);
+                } finally {
+                    this.isRefreshingTransactions = false;
+                }
+            },
+        };
+    }
+
+    function credentialsPanel(isInitiallyValidated) {
+        return {
+            isCredentialsValidated: isInitiallyValidated,
+            isValidationInProgress: false,
+            validationMessage: '',
+            validationError: '',
+            async revalidateCredentials() {
+                this.isValidationInProgress = true;
+                this.validationMessage = '';
+                this.validationError = '';
+
+                try {
+                    const response = await fetch('/settings/binance/revalidate', { method: 'POST' });
+                    if (!response.ok) {
+                        const errorBody = await response.text();
+                        this.validationError = errorBody || 'Revalidation failed. Please try again.';
+                        this.isCredentialsValidated = false;
+                        return;
+                    }
+
+                    const body = await response.json();
+                    this.validationMessage = body.message || 'Credentials are valid.';
+                    this.isCredentialsValidated = true;
+                } catch (error) {
+                    console.error('Credential revalidation failed', error);
+                    this.validationError = 'Revalidation failed. Please try again.';
+                    this.isCredentialsValidated = false;
+                } finally {
+                    this.isValidationInProgress = false;
+                }
+            }
+        };
+    }
+
+    function symbolDropdown(inputId) {
+        return {
+            query: '',
+            filteredSymbols: [],
+            highlightedIndex: -1,
+            filter() {
+                const search = this.query.toUpperCase();
+                const availableSymbols = Alpine.store('symbolStore').symbols || [];
+                if (!search) {
+                    this.filteredSymbols = availableSymbols.slice(0, 20);
+                    this.highlightedIndex = this.filteredSymbols.length ? 0 : -1;
+                    return;
+                }
+                this.filteredSymbols = availableSymbols
+                    .filter(symbol => symbol.includes(search))
+                    .slice(0, 20);
+                this.highlightedIndex = this.filteredSymbols.length ? 0 : -1;
+            },
+            select(symbol) {
+                this.query = symbol;
+                this.filteredSymbols = [];
+                this.highlightedIndex = -1;
+            },
+            highlightNext() {
+                if (!this.filteredSymbols.length) {
+                    return;
+                }
+                this.highlightedIndex = (this.highlightedIndex + 1) % this.filteredSymbols.length;
+            },
+            highlightPrevious() {
+                if (!this.filteredSymbols.length) {
+                    return;
+                }
+                this.highlightedIndex = (this.highlightedIndex - 1 + this.filteredSymbols.length) % this.filteredSymbols.length;
+            },
+            selectHighlighted() {
+                if (this.highlightedIndex < 0 || this.highlightedIndex >= this.filteredSymbols.length) {
+                    return;
+                }
+                this.select(this.filteredSymbols[this.highlightedIndex]);
+            }
+        };
+    }
+</script>
+</body>
+</html>
+{{end}}
