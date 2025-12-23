@@ -59,6 +59,7 @@ func (server *Server) RegisterRoutes() http.Handler {
 	router.HandleFunc("/settings/binance/revalidate", server.handleRevalidateBinanceCredentials)
 	router.HandleFunc("/settings/daily-purchase", server.handleUpdateDailyPurchaseSettings)
 	router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
+	router.HandleFunc("/binance/price", server.handleBinancePrice)
 	router.HandleFunc("/operations/execute-next", server.handleExecuteNextOperation)
 	return router
 }
@@ -238,24 +239,34 @@ func (server *Server) handleEmailAlertRequest(responseWriter http.ResponseWriter
 		TradingPairOrCurrency: request.FormValue("alert_trading_pair_symbol"),
 	}
 
-	thresholdValue, thresholdParseError := strconv.ParseFloat(request.FormValue("alert_threshold"), 64)
-	if thresholdParseError != nil {
-		http.Error(responseWriter, "Invalid threshold", http.StatusBadRequest)
+	minimumThreshold, minimumParseError := strconv.ParseFloat(request.FormValue("alert_min_threshold"), 64)
+	if minimumParseError != nil {
+		log.Printf("Invalid minimum threshold supplied: %v", minimumParseError)
+		server.redirectToDashboardWithEmailAlertMessage(responseWriter, request, "Minimum threshold must be a number.", true)
 		return
 	}
-	alert.ThresholdValue = thresholdValue
+
+	maximumThreshold, maximumParseError := strconv.ParseFloat(request.FormValue("alert_max_threshold"), 64)
+	if maximumParseError != nil {
+		log.Printf("Invalid maximum threshold supplied: %v", maximumParseError)
+		server.redirectToDashboardWithEmailAlertMessage(responseWriter, request, "Maximum threshold must be a number.", true)
+		return
+	}
+
+	alert.MinimumThreshold = minimumThreshold
+	alert.MaximumThreshold = maximumThreshold
 
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 10*time.Second)
 	defer cancel()
 
-	_, sendError := server.EmailAlertService.SendAndLogAlert(contextWithTimeout, alert)
-	if sendError != nil {
-		log.Printf("Email alert failed: %v", sendError)
-		http.Error(responseWriter, sendError.Error(), http.StatusBadRequest)
+	_, creationError := server.EmailAlertService.CreateAlertDefinition(contextWithTimeout, alert)
+	if creationError != nil {
+		log.Printf("Email alert creation failed: %v", creationError)
+		server.redirectToDashboardWithEmailAlertMessage(responseWriter, request, creationError.Error(), true)
 		return
 	}
 
-	http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
+	server.redirectToDashboardWithEmailAlertMessage(responseWriter, request, "Email alert saved. We will notify you when it reaches your thresholds.", false)
 }
 
 func (server *Server) handleListOperations(responseWriter http.ResponseWriter, request *http.Request) {
@@ -450,6 +461,36 @@ func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, r
 	}
 }
 
+func (server *Server) handleBinancePrice(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	tradingPairSymbol := request.URL.Query().Get("symbol")
+	if tradingPairSymbol == "" {
+		http.Error(responseWriter, "Missing symbol parameter", http.StatusBadRequest)
+		return
+	}
+
+	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 6*time.Second)
+	defer cancel()
+
+	currentPrice, priceError := server.BinancePriceService.GetCurrentPrice(contextWithTimeout, tradingPairSymbol)
+	if priceError != nil {
+		log.Printf("Could not fetch Binance price for %s: %v", tradingPairSymbol, priceError)
+		http.Error(responseWriter, "Could not fetch price", http.StatusBadGateway)
+		return
+	}
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	encodeError := json.NewEncoder(responseWriter).Encode(BinancePriceResponse{Symbol: tradingPairSymbol, Price: currentPrice})
+	if encodeError != nil {
+		log.Printf("Could not encode price: %v", encodeError)
+		http.Error(responseWriter, "Failed to serialize price", http.StatusInternalServerError)
+	}
+}
+
 func (server *Server) buildDashboardViewModelWithRequest(request *http.Request) (*DashboardViewModel, error) {
 	dashboardViewModel, loadError := server.buildDashboardViewModel(request.Context())
 	if loadError != nil {
@@ -458,6 +499,7 @@ func (server *Server) buildDashboardViewModelWithRequest(request *http.Request) 
 
 	server.applyPurchaseFormOverridesFromRequest(dashboardViewModel, request)
 	server.applyDailyPurchaseFormOverridesFromRequest(dashboardViewModel, request)
+	server.applyEmailAlertFormOverridesFromRequest(dashboardViewModel, request)
 	return dashboardViewModel, nil
 }
 
@@ -535,6 +577,10 @@ func (server *Server) buildDashboardViewModel(requestContext context.Context) (*
 		DailyPurchaseErrorMessage:    dailyPurchaseErrorMessage,
 		DailyPurchaseExecutions:      dailyPurchaseExecutions,
 		DailyPurchaseExecutionsError: dailyPurchaseExecutionsErrorMessage,
+		EmailAlertRecipientAddress:   "",
+		EmailAlertTradingPairSymbol:  "",
+		EmailAlertMinimumThreshold:   "",
+		EmailAlertMaximumThreshold:   "",
 	}, nil
 }
 
@@ -570,6 +616,28 @@ func (server *Server) applyDailyPurchaseFormOverridesFromRequest(viewModel *Dash
 	}
 	if dailyPurchaseAmount := queryValues.Get("daily_purchase_amount"); dailyPurchaseAmount != "" {
 		viewModel.DailyPurchaseAmount = dailyPurchaseAmount
+	}
+}
+
+func (server *Server) applyEmailAlertFormOverridesFromRequest(viewModel *DashboardViewModel, request *http.Request) {
+	queryValues := request.URL.Query()
+	if emailAlertErrorMessage := queryValues.Get("email_alert_error"); emailAlertErrorMessage != "" {
+		viewModel.EmailAlertErrorMessage = emailAlertErrorMessage
+	}
+	if emailAlertSuccessMessage := queryValues.Get("email_alert_success"); emailAlertSuccessMessage != "" {
+		viewModel.EmailAlertSuccessMessage = emailAlertSuccessMessage
+	}
+	if recipientAddress := queryValues.Get("email_alert_recipient"); recipientAddress != "" {
+		viewModel.EmailAlertRecipientAddress = recipientAddress
+	}
+	if tradingPairSymbol := queryValues.Get("email_alert_trading_pair"); tradingPairSymbol != "" {
+		viewModel.EmailAlertTradingPairSymbol = tradingPairSymbol
+	}
+	if minimumThreshold := queryValues.Get("email_alert_min_threshold"); minimumThreshold != "" {
+		viewModel.EmailAlertMinimumThreshold = minimumThreshold
+	}
+	if maximumThreshold := queryValues.Get("email_alert_max_threshold"); maximumThreshold != "" {
+		viewModel.EmailAlertMaximumThreshold = maximumThreshold
 	}
 }
 
@@ -630,6 +698,44 @@ func (server *Server) redirectToDashboardWithDailyPurchaseMessage(responseWriter
 	http.Redirect(responseWriter, request, redirectPath, http.StatusSeeOther)
 }
 
+func (server *Server) redirectToDashboardWithEmailAlertMessage(responseWriter http.ResponseWriter, request *http.Request, message string, isError bool) {
+	queryValues := url.Values{}
+	if message != "" {
+		if isError {
+			queryValues.Set("email_alert_error", message)
+		} else {
+			queryValues.Set("email_alert_success", message)
+		}
+	}
+
+	recipientAddress := request.FormValue("recipient_address")
+	if recipientAddress != "" {
+		queryValues.Set("email_alert_recipient", recipientAddress)
+	}
+
+	tradingPairSymbol := request.FormValue("alert_trading_pair_symbol")
+	if tradingPairSymbol != "" {
+		queryValues.Set("email_alert_trading_pair", tradingPairSymbol)
+	}
+
+	minimumThreshold := request.FormValue("alert_min_threshold")
+	if minimumThreshold != "" {
+		queryValues.Set("email_alert_min_threshold", minimumThreshold)
+	}
+
+	maximumThreshold := request.FormValue("alert_max_threshold")
+	if maximumThreshold != "" {
+		queryValues.Set("email_alert_max_threshold", maximumThreshold)
+	}
+
+	redirectPath := "/"
+	if encodedQuery := queryValues.Encode(); encodedQuery != "" {
+		redirectPath = redirectPath + "?" + encodedQuery
+	}
+
+	http.Redirect(responseWriter, request, redirectPath, http.StatusSeeOther)
+}
+
 func formatFloatForInputValue(value float64) string {
 	return fmt.Sprintf("%.2f", value)
 }
@@ -670,6 +776,12 @@ type DashboardViewModel struct {
 	DailyPurchaseSuccessMessage  string
 	DailyPurchaseExecutions      []domain.TradingOperationExecution
 	DailyPurchaseExecutionsError string
+	EmailAlertRecipientAddress   string
+	EmailAlertTradingPairSymbol  string
+	EmailAlertMinimumThreshold   string
+	EmailAlertMaximumThreshold   string
+	EmailAlertErrorMessage        string
+	EmailAlertSuccessMessage      string
 }
 
 type OperationHistoryViewModel struct {
@@ -692,6 +804,11 @@ type OperationHistoryViewModel struct {
 
 type BinanceSymbolsResponse struct {
         Symbols []string `json:"symbols"`
+}
+
+type BinancePriceResponse struct {
+        Symbol string  `json:"symbol"`
+        Price  float64 `json:"price"`
 }
 
 func (server *Server) reconcileFilledSellOrders(requestContext context.Context) {

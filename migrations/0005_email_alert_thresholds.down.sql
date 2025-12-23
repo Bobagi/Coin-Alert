@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE email_alerts
+DROP COLUMN IF EXISTS min_threshold,
+DROP COLUMN IF EXISTS max_threshold,
+DROP COLUMN IF EXISTS is_active,
+DROP COLUMN IF EXISTS triggered_at;
+
+COMMIT;

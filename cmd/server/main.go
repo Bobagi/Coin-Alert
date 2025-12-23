@@ -56,6 +56,7 @@ func main() {
 	binanceSymbolService := service.NewBinanceSymbolService(activeEnvironment)
 	binanceTradingService := service.NewBinanceTradingService(activeEnvironment)
 	dailyPurchaseAutomationService := service.NewDailyPurchaseAutomationService(dailyPurchaseSettingsService, binancePriceService, binanceTradingService, tradingOperationService, tradingScheduleService)
+	emailAlertMonitoringService := service.NewEmailAlertMonitoringService(emailAlertRepository, emailAlertService, binancePriceService, applicationConfiguration.EmailAlertPollIntervalSeconds)
 	initialScheduleContext, initialScheduleCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer initialScheduleCancel()
 	automationService.EvaluateAndSellProfitableOperations(initialScheduleContext)
@@ -85,6 +86,7 @@ func main() {
 
 	automationService.StartBackgroundJobs(applicationContext)
 	dailyPurchaseAutomationService.StartBackgroundJobs(applicationContext)
+	emailAlertMonitoringService.StartBackgroundJobs(applicationContext)
 
 	serverAddress := ":" + applicationConfiguration.ServerPort
 	httpServer := &http.Server{Addr: serverAddress, Handler: router}
