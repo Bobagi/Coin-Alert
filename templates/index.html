@@ -107,18 +107,21 @@
             <p class="muted">One trading pair drives both buying and selling. Each purchase reserves capital until auto-sold at your profit target.</p>
             <form action="/operations/purchase" method="post">
                 <label for="trading_pair_symbol">Trading pair</label>
-                <div class="dropdown" x-data="symbolDropdown('trading_pair_symbol')">
-                    <input id="trading_pair_symbol" name="trading_pair_symbol" x-model="query" x-on:input.debounce.300ms="filter" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. BTCUSDT" autocomplete="off" required value="{{.TradingPairSymbol}}">
+                <div class="dropdown" x-data="symbolDropdown('trading_pair_symbol', '{{.PurchaseTradingPairSymbol}}')" x-init="initPriceLookup()">
+                    <input id="trading_pair_symbol" name="trading_pair_symbol" x-model="query" x-on:input.debounce.300ms="handleInputChange()" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. BTCUSDT" autocomplete="off" required value="{{.PurchaseTradingPairSymbol}}">
                     <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
                         <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
                             <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
+                    <div class="muted" x-show="isPriceLoading">Loading current price...</div>
+                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
+                    <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
                 </div>
                 <label for="capital_threshold">Capital threshold</label>
-                <input id="capital_threshold" name="capital_threshold" type="number" step="0.01" min="0.01" value="{{printf "%.2f" .CapitalThreshold}}" required>
+                <input id="capital_threshold" name="capital_threshold" type="number" step="0.01" min="0.01" value="{{.PurchaseCapitalThreshold}}" required>
                 <label for="target_profit_percent">Profit target (%)</label>
-                <input id="target_profit_percent" name="target_profit_percent" type="number" step="0.01" min="0.01" value="{{printf "%.2f" .TargetProfitPercent}}" required>
+                <input id="target_profit_percent" name="target_profit_percent" type="number" step="0.01" min="0.01" value="{{.PurchaseTargetProfitPercent}}" required>
                 <button type="submit">Save purchase</button>
             </form>
             {{if .PurchaseErrorMessage}}
@@ -130,16 +133,61 @@
             </div>
         </div>
         <div class="card">
+            <h2>Daily buy</h2>
+            <p class="muted">Schedule a fixed purchase every day at {{.DailyPurchaseHourUTC}}:00 UTC.</p>
+            <form action="/settings/daily-purchase" method="post">
+                <label for="daily_purchase_trading_pair_symbol">Trading pair</label>
+                <div class="dropdown" x-data="symbolDropdown('daily_purchase_trading_pair_symbol', '{{.DailyPurchaseTradingPair}}')" x-init="initPriceLookup()">
+                    <input id="daily_purchase_trading_pair_symbol" name="daily_purchase_trading_pair_symbol" x-model="query" x-on:input.debounce.300ms="handleInputChange()" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="E.g. BTCUSDT" autocomplete="off" required value="{{.DailyPurchaseTradingPair}}">
+                    <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
+                        <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
+                            <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
+                        </template>
+                    </div>
+                    <div class="muted" x-show="isPriceLoading">Loading current price...</div>
+                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
+                    <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
+                </div>
+                <label for="daily_purchase_amount">Daily amount</label>
+                <input id="daily_purchase_amount" name="daily_purchase_amount" type="number" step="0.01" min="0.01" placeholder="Amount in quote currency" value="{{.DailyPurchaseAmount}}" required>
+                <button type="submit">Save daily buy</button>
+            </form>
+            {{if .DailyPurchaseErrorMessage}}
+            <div class="muted" style="color:#ef4444; margin-top:8px;">{{.DailyPurchaseErrorMessage}}</div>
+            {{end}}
+            {{if .DailyPurchaseSuccessMessage}}
+            <div class="muted" style="color:#22c55e; margin-top:8px;">{{.DailyPurchaseSuccessMessage}}</div>
+            {{end}}
+        </div>
+        <div class="card">
             <h2>Send email alert</h2>
             <form action="/alerts/email" method="post">
                 <label for="recipient_address">Recipient</label>
-                <input id="recipient_address" name="recipient_address" type="email" placeholder="user@example.com" required>
+                <input id="recipient_address" name="recipient_address" type="email" placeholder="user@example.com" required value="{{.EmailAlertRecipientAddress}}">
                 <label for="alert_trading_pair_symbol">Trading pair or currency</label>
-                <input id="alert_trading_pair_symbol" name="alert_trading_pair_symbol" type="text" placeholder="BTCUSDT" required>
-                <label for="alert_threshold">Threshold</label>
-                <input id="alert_threshold" name="alert_threshold" type="number" step="0.0001" placeholder="Price trigger" required>
+                <div class="dropdown" x-data="symbolDropdown('alert_trading_pair_symbol', '{{.EmailAlertTradingPairSymbol}}')" x-init="initPriceLookup()">
+                    <input id="alert_trading_pair_symbol" name="alert_trading_pair_symbol" x-model="query" x-on:input.debounce.300ms="handleInputChange()" x-on:keydown.arrow-down.prevent="highlightNext()" x-on:keydown.arrow-up.prevent="highlightPrevious()" x-on:keydown.enter.prevent="selectHighlighted()" placeholder="BTCUSDT" autocomplete="off" required value="{{.EmailAlertTradingPairSymbol}}">
+                    <div class="dropdown-list" x-show="filteredSymbols.length" x-transition>
+                        <template x-for="(symbol, index) in filteredSymbols" :key="symbol">
+                            <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
+                        </template>
+                    </div>
+                    <div class="muted" x-show="isPriceLoading">Loading current price...</div>
+                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
+                    <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
+                </div>
+                <label for="alert_min_threshold">Minimum threshold</label>
+                <input id="alert_min_threshold" name="alert_min_threshold" type="number" step="0.0001" placeholder="Minimum price" required value="{{.EmailAlertMinimumThreshold}}">
+                <label for="alert_max_threshold">Maximum threshold</label>
+                <input id="alert_max_threshold" name="alert_max_threshold" type="number" step="0.0001" placeholder="Maximum price" required value="{{.EmailAlertMaximumThreshold}}">
                 <button type="submit">Send alert</button>
             </form>
+            {{if .EmailAlertErrorMessage}}
+            <div class="muted" style="color:#ef4444; margin-top:8px;">{{.EmailAlertErrorMessage}}</div>
+            {{end}}
+            {{if .EmailAlertSuccessMessage}}
+            <div class="muted" style="color:#22c55e; margin-top:8px;">{{.EmailAlertSuccessMessage}}</div>
+            {{end}}
             <div class="notes">
                 <div class="muted">Binance base URL</div>
                 <div class="pill">{{.BinanceAPIBaseURL}}</div>
@@ -199,6 +247,37 @@
             </div>
             {{else}}
             <p class="muted">No executions recorded yet.</p>
+            {{end}}
+        </div>
+        <div class="card">
+            <h2>Daily buy history</h2>
+            {{if .DailyPurchaseExecutionsError}}
+                <p class="muted" style="color:#ef4444;">{{.DailyPurchaseExecutionsError}}</p>
+            {{else if .DailyPurchaseExecutions}}
+                <div class="transactions">
+                    {{range .DailyPurchaseExecutions}}
+                    <div class="transaction-item">
+                        <div>
+                            {{if .Success}}
+                            <div class="badge buy">SUCCESS</div>
+                            {{else}}
+                            <div class="badge sell">FAILED</div>
+                            {{end}}
+                            <div style="font-weight:700; margin-top:6px;">{{.TradingPairSymbol}}</div>
+                            <div class="muted">Executed at {{.ExecutedAt}}</div>
+                            <div class="muted">Unit: {{printf "%.6f" .UnitPrice}} • Qty: {{printf "%.6f" .Quantity}} • Total: {{printf "%.2f" .TotalValue}}</div>
+                            {{if .OrderIdentifier}}
+                            <div class="muted">Order ID: {{.OrderIdentifier}}</div>
+                            {{end}}
+                            {{if .ErrorMessage}}
+                            <div class="muted" style="color:#ef4444;">Error: {{.ErrorMessage}}</div>
+                            {{end}}
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            {{else}}
+                <p class="muted">No daily purchases recorded yet.</p>
             {{end}}
         </div>
         <div class="card">
@@ -354,11 +433,24 @@
         };
     }
 
-    function symbolDropdown(inputId) {
+    function symbolDropdown(inputId, initialValue) {
         return {
-            query: '',
+            query: initialValue || '',
             filteredSymbols: [],
             highlightedIndex: -1,
+            currentPriceText: '',
+            priceErrorMessage: '',
+            isPriceLoading: false,
+            lastPriceSymbol: '',
+            initPriceLookup() {
+                if (this.query) {
+                    this.updatePrice();
+                }
+            },
+            handleInputChange() {
+                this.filter();
+                this.updatePrice();
+            },
             filter() {
                 const search = this.query.toUpperCase();
                 const availableSymbols = Alpine.store('symbolStore').symbols || [];
@@ -376,6 +468,7 @@
                 this.query = symbol;
                 this.filteredSymbols = [];
                 this.highlightedIndex = -1;
+                this.updatePrice();
             },
             highlightNext() {
                 if (!this.filteredSymbols.length) {
@@ -394,6 +487,41 @@
                     return;
                 }
                 this.select(this.filteredSymbols[this.highlightedIndex]);
+            },
+            async updatePrice() {
+                const symbol = this.query.trim().toUpperCase();
+                if (!symbol) {
+                    this.currentPriceText = '';
+                    this.priceErrorMessage = '';
+                    this.lastPriceSymbol = '';
+                    return;
+                }
+                if (symbol === this.lastPriceSymbol) {
+                    return;
+                }
+                this.lastPriceSymbol = symbol;
+                this.isPriceLoading = true;
+                this.priceErrorMessage = '';
+                try {
+                    const response = await fetch(`/binance/price?symbol=${encodeURIComponent(symbol)}`);
+                    if (!response.ok) {
+                        this.priceErrorMessage = 'Could not fetch current price.';
+                        this.currentPriceText = '';
+                        return;
+                    }
+                    const body = await response.json();
+                    if (body.price) {
+                        this.currentPriceText = `Current price: ${Number(body.price).toFixed(6)}`;
+                    } else {
+                        this.currentPriceText = 'Current price unavailable.';
+                    }
+                } catch (error) {
+                    console.error('Could not fetch current price', error);
+                    this.priceErrorMessage = 'Could not fetch current price.';
+                    this.currentPriceText = '';
+                } finally {
+                    this.isPriceLoading = false;
+                }
             }
         };
     }

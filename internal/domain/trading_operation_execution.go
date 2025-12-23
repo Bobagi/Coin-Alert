@@ -19,6 +19,7 @@ type TradingOperationExecution struct {
 }
 
 const (
-        TradingOperationTypeBuy  = "BUY"
-        TradingOperationTypeSell = "SELL"
+        TradingOperationTypeBuy      = "BUY"
+        TradingOperationTypeSell     = "SELL"
+        TradingOperationTypeDailyBuy = "DAILY_BUY"
 )

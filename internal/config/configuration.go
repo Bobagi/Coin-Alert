@@ -14,6 +14,8 @@ type ApplicationConfiguration struct {
         ApplicationBaseURL           string
         AutomaticSellIntervalMinutes int
         DailyPurchaseIntervalMinutes int
+        DailyPurchaseHourUTC         int
+        EmailAlertPollIntervalSeconds int
         TradingPairSymbol            string
         TradingCapitalThreshold      float64
         TargetProfitPercent          float64
@@ -30,9 +32,13 @@ type ApplicationConfiguration struct {
 func LoadApplicationConfiguration() ApplicationConfiguration {
         automaticSellIntervalMinutes := parseIntegerWithDefault("AUTO_SELL_INTERVAL_MINUTES", 60)
         dailyPurchaseIntervalMinutes := parseIntegerWithDefault("DAILY_PURCHASE_INTERVAL_MINUTES", 1440)
+        dailyPurchaseHourUTC := parseIntegerWithDefault("DIP_HOUR_UTC", 4)
+        emailAlertPollIntervalSeconds := parseIntegerWithDefault("POLL_INTERVAL_SECONDS", 60)
         emailSMTPPort := parseIntegerWithDefault("EMAIL_SMTP_PORT", 587)
         binanceEnvironment := resolveBinanceEnvironment()
         binanceAPIBaseURL := resolveBinanceBaseURL(binanceEnvironment)
+        binanceAPIKey := resolveBinanceAPIKey(binanceEnvironment)
+        binanceAPISecret := resolveBinanceAPISecret(binanceEnvironment)
         tradingCapitalThreshold := parseFloatWithDefault("TRADING_CAPITAL_THRESHOLD", 100)
         targetProfitPercent := parseFloatWithDefault("TARGET_PROFIT_PERCENT", 10)
 
@@ -42,6 +48,8 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
                 ApplicationBaseURL:           getEnvironmentValueWithDefault("API_URL", "http://localhost:5020"),
                 AutomaticSellIntervalMinutes: automaticSellIntervalMinutes,
                 DailyPurchaseIntervalMinutes: dailyPurchaseIntervalMinutes,
+                DailyPurchaseHourUTC:         dailyPurchaseHourUTC,
+                EmailAlertPollIntervalSeconds: emailAlertPollIntervalSeconds,
                 TradingPairSymbol:            getEnvironmentValueWithDefault("TRADE_SYMBOL", "BTCUSDT"),
                 TradingCapitalThreshold:      tradingCapitalThreshold,
                 TargetProfitPercent:          targetProfitPercent,
@@ -49,8 +57,8 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
                 EmailSenderPassword:          getEnvironmentValueWithDefault("EMAIL_SENDER_PASSWORD", ""),
                 EmailSMTPHost:                getEnvironmentValueWithDefault("EMAIL_SMTP_HOST", ""),
                 EmailSMTPPort:                emailSMTPPort,
-                BinanceAPIKey:                getEnvironmentValueWithDefault("BINANCE_API_KEY", ""),
-                BinanceAPISecret:             getEnvironmentValueWithDefault("BINANCE_API_SECRET", ""),
+                BinanceAPIKey:                binanceAPIKey,
+                BinanceAPISecret:             binanceAPISecret,
                 BinanceAPIBaseURL:            binanceAPIBaseURL,
                 BinanceEnvironment:           binanceEnvironment,
         }
@@ -62,11 +70,13 @@ func LoadApplicationConfiguration() ApplicationConfiguration {
 
 func logNonSensitiveConfiguration(configuration ApplicationConfiguration) {
         log.Printf(
-                "Loaded configuration (non-sensitive): serverPort=%s applicationBaseURL=%s automaticSellIntervalMinutes=%d dailyPurchaseIntervalMinutes=%d tradingPair=%s capitalThreshold=%.2f targetProfitPercent=%.2f emailSMTPHost=%s emailSMTPPort=%d binanceEnvironment=%s",
+                "Loaded configuration (non-sensitive): serverPort=%s applicationBaseURL=%s automaticSellIntervalMinutes=%d dailyPurchaseIntervalMinutes=%d dailyPurchaseHourUTC=%d emailAlertPollIntervalSeconds=%d tradingPair=%s capitalThreshold=%.2f targetProfitPercent=%.2f emailSMTPHost=%s emailSMTPPort=%d binanceEnvironment=%s",
                 configuration.ServerPort,
                 configuration.ApplicationBaseURL,
                 configuration.AutomaticSellIntervalMinutes,
                 configuration.DailyPurchaseIntervalMinutes,
+                configuration.DailyPurchaseHourUTC,
+                configuration.EmailAlertPollIntervalSeconds,
                 configuration.TradingPairSymbol,
                 configuration.TradingCapitalThreshold,
                 configuration.TargetProfitPercent,
@@ -103,6 +113,30 @@ func resolveBinanceBaseURL(environmentName string) string {
         }
 
         return "https://testnet.binance.vision"
+}
+
+func resolveBinanceAPIKey(environmentName string) string {
+        normalizedEnvironment := domain.NormalizeBinanceEnvironment(environmentName)
+        if normalizedEnvironment == domain.BinanceEnvironmentTestnet {
+                testnetAPIKey := getEnvironmentValueWithDefault("BINANCE_TESTNET_API_KEY", "")
+                if testnetAPIKey != "" {
+                        return testnetAPIKey
+                }
+        }
+
+        return getEnvironmentValueWithDefault("BINANCE_API_KEY", "")
+}
+
+func resolveBinanceAPISecret(environmentName string) string {
+        normalizedEnvironment := domain.NormalizeBinanceEnvironment(environmentName)
+        if normalizedEnvironment == domain.BinanceEnvironmentTestnet {
+                testnetAPISecret := getEnvironmentValueWithDefault("BINANCE_TESTNET_API_SECRET", "")
+                if testnetAPISecret != "" {
+                        return testnetAPISecret
+                }
+        }
+
+        return getEnvironmentValueWithDefault("BINANCE_API_SECRET", "")
 }
 
 func buildDatabaseURL() string {

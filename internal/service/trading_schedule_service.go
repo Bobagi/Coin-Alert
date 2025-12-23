@@ -90,3 +90,16 @@ func (service *TradingScheduleService) ListExecutionsPage(contextWithTimeout con
 	offset := (pageNumber - 1) * limit
 	return service.ExecutionRepository.ListExecutionsPage(contextWithTimeout, limit, offset)
 }
+
+func (service *TradingScheduleService) ListRecentExecutionsByOperationType(contextWithTimeout context.Context, limit int, operationType string) ([]domain.TradingOperationExecution, error) {
+	return service.ExecutionRepository.ListRecentExecutionsByOperationType(contextWithTimeout, limit, operationType)
+}
+
+func (service *TradingScheduleService) ListExecutionsPageByOperationType(contextWithTimeout context.Context, limit int, pageNumber int, operationType string) ([]domain.TradingOperationExecution, error) {
+	if pageNumber < 1 {
+		pageNumber = 1
+	}
+
+	offset := (pageNumber - 1) * limit
+	return service.ExecutionRepository.ListExecutionsPageByOperationType(contextWithTimeout, limit, offset, operationType)
+}

@@ -16,16 +16,18 @@
         .badge.sell { background: rgba(239,68,68,0.15); color: #ef4444; }
         .badge.pending { background: rgba(251,191,36,0.15); color: #fbbf24; }
         .transaction-item { padding: 12px; border-bottom: 1px solid #1f2937; display: flex; justify-content: space-between; align-items: center; }
-        .pagination { display: flex; gap: 10px; margin-top: 12px; }
+        .pagination { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
         .pagination a { color: #22c55e; text-decoration: none; font-weight: 700; }
         .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: #0b1220; border: 1px solid #1f2937; margin-top: 4px; }
+        .button-link { display: inline-flex; align-items: center; justify-content: center; padding: 10px 16px; background: linear-gradient(120deg, #22c55e, #16a34a); color: white; border-radius: 10px; text-decoration: none; font-weight: 700; }
+        .button-link.secondary { background: linear-gradient(120deg, #06b6d4, #6366f1); }
     </style>
 </head>
 <body>
 <header>
     <h1>Operation History</h1>
     <p>Active environment: {{.ActiveBinanceEnvironment}} • {{.BinanceAPIBaseURL}}</p>
-    <a href="/" style="color:white; font-weight:700;">Back to dashboard</a>
+    <a href="/" class="button-link secondary">Back to dashboard</a>
 </header>
 <div class="container">
     <div class="card">
@@ -59,10 +61,10 @@
         {{end}}
         <div class="pagination">
             {{if .HasPreviousOperationPage}}
-                <a href="/operations/history?operations_page={{subtractOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}">Previous</a>
+                <a href="/operations/history?operations_page={{subtractOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}&daily_purchase_page={{.DailyPurchasePageNumber}}">Previous</a>
             {{end}}
             {{if .HasNextOperationPage}}
-                <a href="/operations/history?operations_page={{addOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}">Next</a>
+                <a href="/operations/history?operations_page={{addOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}&daily_purchase_page={{.DailyPurchasePageNumber}}">Next</a>
             {{end}}
         </div>
     </div>
@@ -95,10 +97,10 @@
         {{end}}
         <div class="pagination">
             {{if .HasPreviousOperationPage}}
-                <a href="/operations/history?operations_page={{subtractOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}">Previous</a>
+                <a href="/operations/history?operations_page={{subtractOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}&daily_purchase_page={{.DailyPurchasePageNumber}}">Previous</a>
             {{end}}
             {{if .HasNextOperationPage}}
-                <a href="/operations/history?operations_page={{addOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}">Next</a>
+                <a href="/operations/history?operations_page={{addOne .OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}&daily_purchase_page={{.DailyPurchasePageNumber}}">Next</a>
             {{end}}
         </div>
     </div>
@@ -130,10 +132,45 @@
         {{end}}
         <div class="pagination">
             {{if .HasPreviousExecutionPage}}
-                <a href="/operations/history?operations_page={{.OperationPageNumber}}&executions_page={{subtractOne .ExecutionPageNumber}}">Previous</a>
+                <a href="/operations/history?operations_page={{.OperationPageNumber}}&executions_page={{subtractOne .ExecutionPageNumber}}&daily_purchase_page={{.DailyPurchasePageNumber}}">Previous</a>
             {{end}}
             {{if .HasNextExecutionPage}}
-                <a href="/operations/history?operations_page={{.OperationPageNumber}}&executions_page={{addOne .ExecutionPageNumber}}">Next</a>
+                <a href="/operations/history?operations_page={{.OperationPageNumber}}&executions_page={{addOne .ExecutionPageNumber}}&daily_purchase_page={{.DailyPurchasePageNumber}}">Next</a>
+            {{end}}
+        </div>
+    </div>
+    <div class="card">
+        <h2>Daily buy history</h2>
+        {{if .DailyPurchaseExecutions}}
+            {{range .DailyPurchaseExecutions}}
+            <div class="transaction-item">
+                <div>
+                    {{if .Success}}
+                        <div class="badge buy">SUCCESS</div>
+                    {{else}}
+                        <div class="badge sell">FAILED</div>
+                    {{end}}
+                    <div style="font-weight:700; margin-top:6px;">{{.TradingPairSymbol}}</div>
+                    <div class="muted">Executed at {{.ExecutedAt}}</div>
+                    <div class="muted">Unit: {{printf "%.6f" .UnitPrice}} • Qty: {{printf "%.6f" .Quantity}} • Total: {{printf "%.2f" .TotalValue}}</div>
+                    {{if .OrderIdentifier}}
+                        <div class="muted">Order ID: {{.OrderIdentifier}}</div>
+                    {{end}}
+                    {{if .ErrorMessage}}
+                        <div class="muted" style="color:#ef4444;">Error: {{.ErrorMessage}}</div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+        {{else}}
+            <p class="muted">No daily purchases recorded.</p>
+        {{end}}
+        <div class="pagination">
+            {{if .HasPreviousDailyPage}}
+                <a href="/operations/history?operations_page={{.OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}&daily_purchase_page={{subtractOne .DailyPurchasePageNumber}}">Previous</a>
+            {{end}}
+            {{if .HasNextDailyPage}}
+                <a href="/operations/history?operations_page={{.OperationPageNumber}}&executions_page={{.ExecutionPageNumber}}&daily_purchase_page={{addOne .DailyPurchasePageNumber}}">Next</a>
             {{end}}
         </div>
     </div>

@@ -12,6 +12,8 @@ type TradingOperationExecutionRepository interface {
 	LogExecution(context.Context, domain.TradingOperationExecution) (int64, error)
 	ListRecentExecutions(context.Context, int) ([]domain.TradingOperationExecution, error)
 	ListExecutionsPage(context.Context, int, int) ([]domain.TradingOperationExecution, error)
+	ListRecentExecutionsByOperationType(context.Context, int, string) ([]domain.TradingOperationExecution, error)
+	ListExecutionsPageByOperationType(context.Context, int, int, string) ([]domain.TradingOperationExecution, error)
 }
 
 type PostgresTradingOperationExecutionRepository struct {
@@ -49,35 +51,7 @@ func (repository *PostgresTradingOperationExecutionRepository) ListRecentExecuti
 		return nil, queryError
 	}
 	defer rows.Close()
-
-	var executions []domain.TradingOperationExecution
-	for rows.Next() {
-		var execution domain.TradingOperationExecution
-		var scheduledOperationID sql.NullInt64
-		var errorMessage sql.NullString
-		var orderIdentifier sql.NullString
-		scanError := rows.Scan(&execution.Identifier, &scheduledOperationID, &execution.TradingPairSymbol, &execution.OperationType, &execution.UnitPrice, &execution.Quantity, &execution.TotalValue, &execution.ExecutedAt, &execution.Success, &errorMessage, &orderIdentifier, &execution.CreatedAt, &execution.UpdatedAt)
-		if scanError != nil {
-			return nil, scanError
-		}
-
-		if scheduledOperationID.Valid {
-			value := scheduledOperationID.Int64
-			execution.ScheduledOperationID = &value
-		}
-		if errorMessage.Valid {
-			value := errorMessage.String
-			execution.ErrorMessage = &value
-		}
-		if orderIdentifier.Valid {
-			value := orderIdentifier.String
-			execution.OrderIdentifier = &value
-		}
-
-		executions = append(executions, execution)
-	}
-
-	return executions, nil
+	return scanTradingOperationExecutions(rows)
 }
 
 func (repository *PostgresTradingOperationExecutionRepository) ListExecutionsPage(contextWithTimeout context.Context, limit int, offset int) ([]domain.TradingOperationExecution, error) {
@@ -90,7 +64,38 @@ func (repository *PostgresTradingOperationExecutionRepository) ListExecutionsPag
 		return nil, queryError
 	}
 	defer rows.Close()
+	return scanTradingOperationExecutions(rows)
+}
 
+func (repository *PostgresTradingOperationExecutionRepository) ListRecentExecutionsByOperationType(contextWithTimeout context.Context, limit int, operationType string) ([]domain.TradingOperationExecution, error) {
+	querySQL := `SELECT id, scheduled_operation_id, trading_pair_symbol, operation_type, unit_price, quantity, total_value, executed_at, success, error_message, order_id, created_at, updated_at FROM trading_operation_executions WHERE operation_type = $1 ORDER BY executed_at DESC LIMIT $2`
+	queryContext, queryCancel := context.WithTimeout(contextWithTimeout, 5*time.Second)
+	defer queryCancel()
+
+	rows, queryError := repository.Database.QueryContext(queryContext, querySQL, operationType, limit)
+	if queryError != nil {
+		return nil, queryError
+	}
+	defer rows.Close()
+
+	return scanTradingOperationExecutions(rows)
+}
+
+func (repository *PostgresTradingOperationExecutionRepository) ListExecutionsPageByOperationType(contextWithTimeout context.Context, limit int, offset int, operationType string) ([]domain.TradingOperationExecution, error) {
+	querySQL := `SELECT id, scheduled_operation_id, trading_pair_symbol, operation_type, unit_price, quantity, total_value, executed_at, success, error_message, order_id, created_at, updated_at FROM trading_operation_executions WHERE operation_type = $1 ORDER BY executed_at DESC LIMIT $2 OFFSET $3`
+	queryContext, queryCancel := context.WithTimeout(contextWithTimeout, 5*time.Second)
+	defer queryCancel()
+
+	rows, queryError := repository.Database.QueryContext(queryContext, querySQL, operationType, limit, offset)
+	if queryError != nil {
+		return nil, queryError
+	}
+	defer rows.Close()
+
+	return scanTradingOperationExecutions(rows)
+}
+
+func scanTradingOperationExecutions(rows *sql.Rows) ([]domain.TradingOperationExecution, error) {
 	var executions []domain.TradingOperationExecution
 	for rows.Next() {
 		var execution domain.TradingOperationExecution

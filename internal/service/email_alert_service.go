@@ -30,40 +30,61 @@ func NewEmailAlertService(emailAlertRepository repository.EmailAlertRepository, 
 	}
 }
 
-func (service *EmailAlertService) SendAndLogAlert(contextWithTimeout context.Context, alert domain.EmailAlert) (int64, error) {
-        if validationError := service.validateAlert(alert); validationError != nil {
-                return 0, validationError
-        }
+func (service *EmailAlertService) CreateAlertDefinition(contextWithTimeout context.Context, alert domain.EmailAlert) (int64, error) {
+	if validationError := service.validateAlertDefinition(alert); validationError != nil {
+		return 0, validationError
+	}
 
-        generatedSubject, generatedMessage := service.populateGeneratedContent(alert)
-
-        sendError := service.dispatchEmail(alert, generatedSubject, generatedMessage)
-        if sendError != nil {
-                return 0, sendError
-        }
-
-        alert.Identifier = 0
-        alert.CreatedAt = time.Now()
-        return service.EmailAlertRepository.LogEmailAlert(contextWithTimeout, alert)
+	alert.Identifier = 0
+	alert.CreatedAt = time.Now()
+	alert.IsActive = true
+	return service.EmailAlertRepository.CreateAlertDefinition(contextWithTimeout, alert)
 }
 
-func (service *EmailAlertService) validateAlert(alert domain.EmailAlert) error {
+func (service *EmailAlertService) TriggerAlert(contextWithTimeout context.Context, alert domain.EmailAlert, currentPrice float64, triggerBoundary string) error {
+	if validationError := service.validateAlertDefinition(alert); validationError != nil {
+		return validationError
+	}
+	if currentPrice <= 0 {
+		return fmt.Errorf("current price must be greater than zero")
+	}
+
+	generatedSubject, generatedMessage := service.populateGeneratedContent(alert, currentPrice, triggerBoundary)
+	sendError := service.dispatchEmail(alert, generatedSubject, generatedMessage)
+	if sendError != nil {
+		return sendError
+	}
+
+	return service.EmailAlertRepository.MarkAlertTriggered(contextWithTimeout, alert.Identifier)
+}
+
+func (service *EmailAlertService) validateAlertDefinition(alert domain.EmailAlert) error {
 	if alert.RecipientAddress == "" {
 		return fmt.Errorf("recipient address must be provided")
 	}
 	if alert.TradingPairOrCurrency == "" {
 		return fmt.Errorf("trading pair or currency must be provided")
 	}
-	if alert.ThresholdValue <= 0 {
-		return fmt.Errorf("threshold must be greater than zero")
+	if alert.MinimumThreshold <= 0 || alert.MaximumThreshold <= 0 {
+		return fmt.Errorf("minimum and maximum thresholds must be greater than zero")
+	}
+	if alert.MinimumThreshold >= alert.MaximumThreshold {
+		return fmt.Errorf("minimum threshold must be lower than maximum threshold")
 	}
 	return nil
 }
 
-func (service *EmailAlertService) populateGeneratedContent(alert domain.EmailAlert) (string, string) {
-        generatedSubject := fmt.Sprintf("Price alert for %s", alert.TradingPairOrCurrency)
-        generatedBody := fmt.Sprintf("The price for %s has reached or crossed your threshold of %.2f. Alerts trigger on upward or downward moves.", alert.TradingPairOrCurrency, alert.ThresholdValue)
-        return generatedSubject, generatedBody
+func (service *EmailAlertService) populateGeneratedContent(alert domain.EmailAlert, currentPrice float64, triggerBoundary string) (string, string) {
+	generatedSubject := fmt.Sprintf("Price alert for %s", alert.TradingPairOrCurrency)
+	generatedBody := fmt.Sprintf(
+		"The price for %s has reached your %s threshold.\n\nCurrent price: %.6f\nMinimum threshold: %.6f\nMaximum threshold: %.6f\n\nThis alert is now marked as triggered.",
+		alert.TradingPairOrCurrency,
+		triggerBoundary,
+		currentPrice,
+		alert.MinimumThreshold,
+		alert.MaximumThreshold,
+	)
+	return generatedSubject, generatedBody
 }
 
 func (service *EmailAlertService) dispatchEmail(alert domain.EmailAlert, generatedSubject string, generatedBody string) error {

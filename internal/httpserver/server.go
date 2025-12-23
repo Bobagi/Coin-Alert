@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -18,6 +20,7 @@ type Server struct {
 	TradingOperationService *service.TradingOperationService
 	EmailAlertService       *service.EmailAlertService
 	AutomationService       *service.TradingAutomationService
+	DailyPurchaseService    *service.DailyPurchaseSettingsService
 	CredentialService       *service.CredentialService
 	BinanceSymbolService    *service.BinanceSymbolService
 	BinancePriceService     *service.BinancePriceService
@@ -27,11 +30,12 @@ type Server struct {
 	Templates               *template.Template
 }
 
-func NewServer(tradingOperationService *service.TradingOperationService, emailAlertService *service.EmailAlertService, automationService *service.TradingAutomationService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, binancePriceService *service.BinancePriceService, binanceTradingService *service.BinanceTradingService, tradingScheduleService *service.TradingScheduleService, settingsSummary DashboardSettingsSummary, templates *template.Template) *Server {
+func NewServer(tradingOperationService *service.TradingOperationService, emailAlertService *service.EmailAlertService, automationService *service.TradingAutomationService, dailyPurchaseService *service.DailyPurchaseSettingsService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, binancePriceService *service.BinancePriceService, binanceTradingService *service.BinanceTradingService, tradingScheduleService *service.TradingScheduleService, settingsSummary DashboardSettingsSummary, templates *template.Template) *Server {
 	return &Server{
 		TradingOperationService: tradingOperationService,
 		EmailAlertService:       emailAlertService,
 		AutomationService:       automationService,
+		DailyPurchaseService:    dailyPurchaseService,
 		CredentialService:       credentialService,
 		BinanceSymbolService:    binanceSymbolService,
 		BinancePriceService:     binancePriceService,
@@ -53,7 +57,9 @@ func (server *Server) RegisterRoutes() http.Handler {
 	router.HandleFunc("/settings/binance", server.handleUpdateBinanceCredentials)
 	router.HandleFunc("/settings/binance/environment", server.handleUpdateBinanceEnvironment)
 	router.HandleFunc("/settings/binance/revalidate", server.handleRevalidateBinanceCredentials)
+	router.HandleFunc("/settings/daily-purchase", server.handleUpdateDailyPurchaseSettings)
 	router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
+	router.HandleFunc("/binance/price", server.handleBinancePrice)
 	router.HandleFunc("/operations/execute-next", server.handleExecuteNextOperation)
 	return router
 }
@@ -70,7 +76,7 @@ func (server *Server) renderDashboard(responseWriter http.ResponseWriter, reques
 		return
 	}
 
-	dashboardContext, contextError := server.buildDashboardViewModel(request.Context())
+	dashboardContext, contextError := server.buildDashboardViewModelWithRequest(request)
 	if contextError != nil {
 		log.Printf("Dashboard data error: %v", contextError)
 		http.Error(responseWriter, "Could not load dashboard data", http.StatusInternalServerError)
@@ -81,30 +87,6 @@ func (server *Server) renderDashboard(responseWriter http.ResponseWriter, reques
 	if templateError != nil {
 		log.Printf("Template render error: %v", templateError)
 		http.Error(responseWriter, "Could not render page", http.StatusInternalServerError)
-	}
-}
-
-func (server *Server) renderDashboardWithPurchaseError(responseWriter http.ResponseWriter, request *http.Request, statusCode int, userFacingMessage string) {
-	responseWriter.WriteHeader(statusCode)
-	dashboardContext, dashboardError := server.buildDashboardViewModel(request.Context())
-	if dashboardError != nil {
-		log.Printf("Dashboard reload failed while handling purchase error: %v", dashboardError)
-		server.renderMinimalPurchaseError(responseWriter, userFacingMessage)
-		return
-	}
-	dashboardContext.PurchaseErrorMessage = userFacingMessage
-	templateError := server.Templates.ExecuteTemplate(responseWriter, "index.html", dashboardContext)
-	if templateError != nil {
-		log.Printf("Template render error while showing purchase error: %v", templateError)
-		server.renderMinimalPurchaseError(responseWriter, userFacingMessage)
-	}
-}
-
-func (server *Server) renderMinimalPurchaseError(responseWriter http.ResponseWriter, userFacingMessage string) {
-	responseWriter.Header().Set("Content-Type", "text/html")
-	_, writeError := responseWriter.Write([]byte("<html><body style=\"font-family:Arial; background:#0f172a; color:#e2e8f0; padding:24px;\"><h2>Purchase error</h2><p>" + template.HTMLEscapeString(userFacingMessage) + "</p><p>Please return to the dashboard and try again.</p></body></html>"))
-	if writeError != nil {
-		log.Printf("Could not render minimal purchase error message: %v", writeError)
 	}
 }
 
@@ -124,14 +106,14 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	capitalThreshold, capitalThresholdError := strconv.ParseFloat(capitalThresholdText, 64)
 	if capitalThresholdError != nil {
 		log.Printf("Invalid capital threshold supplied: %v", capitalThresholdError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Invalid capital threshold. Please provide a numeric value.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Invalid capital threshold. Please provide a numeric value.")
 		return
 	}
 
 	targetProfitPercent, targetParseError := strconv.ParseFloat(request.FormValue("target_profit_percent"), 64)
 	if targetParseError != nil {
 		log.Printf("Invalid target profit percent supplied: %v", targetParseError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Invalid profit percent. Please provide a numeric value.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Invalid profit percent. Please provide a numeric value.")
 		return
 	}
 
@@ -141,19 +123,19 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	currentPricePerUnit, priceLookupError := server.BinancePriceService.GetCurrentPrice(currentPriceContext, request.FormValue("trading_pair_symbol"))
 	if priceLookupError != nil {
 		log.Printf("Could not fetch current price for purchase: %v", priceLookupError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Could not fetch current price for the selected pair. Please try again.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Could not fetch current price for the selected pair. Please try again.")
 		return
 	}
 
 	if currentPricePerUnit <= 0 {
 		log.Printf("Binance returned non-positive price for %s", request.FormValue("trading_pair_symbol"))
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Current price is unavailable for this pair. Please try again later.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Current price is unavailable for this pair. Please try again later.")
 		return
 	}
 
 	if capitalThreshold <= 0 {
 		log.Printf("Capital threshold less than or equal to zero: %f", capitalThreshold)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadRequest, "Capital threshold must be greater than zero.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Capital threshold must be greater than zero.")
 		return
 	}
 
@@ -171,7 +153,7 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	if buyError != nil {
 		server.logExecutionFailure(request.Context(), domain.TradingOperationTypeBuy, request.FormValue("trading_pair_symbol"), buyError)
 		log.Printf("Buy failed for %s: %v", request.FormValue("trading_pair_symbol"), buyError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Buy failed: "+buyError.Error())
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Buy failed: "+buyError.Error())
 		return
 	}
 
@@ -179,7 +161,7 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	if executedQuantityError != nil || executedQuantity <= 0 {
 		server.logExecutionFailure(request.Context(), domain.TradingOperationTypeBuy, request.FormValue("trading_pair_symbol"), errors.New("Binance returned an invalid executed quantity"))
 		log.Printf("Buy failed for %s due to invalid executed quantity: %v", request.FormValue("trading_pair_symbol"), executedQuantityError)
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Buy failed: Binance returned an invalid executed quantity.")
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Buy failed: Binance returned an invalid executed quantity.")
 		return
 	}
 
@@ -226,14 +208,14 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	_, creationError := server.TradingOperationService.RecordPurchaseOperation(contextWithTimeout, operation)
 	if creationError != nil {
 		log.Printf("Trading operation creation failed: %v", creationError)
-		http.Error(responseWriter, creationError.Error(), http.StatusBadRequest)
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, creationError.Error())
 		return
 	}
 
 	server.logExecutionSuccess(request.Context(), domain.TradingOperationTypeBuy, operation.TradingPairSymbol, purchaseUnitPrice, executedQuantity, buyOrderID)
 
 	if sellError != nil {
-		server.renderDashboardWithPurchaseError(responseWriter, request, http.StatusBadGateway, "Sell order could not be created: "+sellError.Error())
+		server.redirectToDashboardWithPurchaseError(responseWriter, request, "Sell order could not be created: "+sellError.Error())
 		return
 	}
 
@@ -257,24 +239,34 @@ func (server *Server) handleEmailAlertRequest(responseWriter http.ResponseWriter
 		TradingPairOrCurrency: request.FormValue("alert_trading_pair_symbol"),
 	}
 
-	thresholdValue, thresholdParseError := strconv.ParseFloat(request.FormValue("alert_threshold"), 64)
-	if thresholdParseError != nil {
-		http.Error(responseWriter, "Invalid threshold", http.StatusBadRequest)
+	minimumThreshold, minimumParseError := strconv.ParseFloat(request.FormValue("alert_min_threshold"), 64)
+	if minimumParseError != nil {
+		log.Printf("Invalid minimum threshold supplied: %v", minimumParseError)
+		server.redirectToDashboardWithEmailAlertMessage(responseWriter, request, "Minimum threshold must be a number.", true)
 		return
 	}
-	alert.ThresholdValue = thresholdValue
+
+	maximumThreshold, maximumParseError := strconv.ParseFloat(request.FormValue("alert_max_threshold"), 64)
+	if maximumParseError != nil {
+		log.Printf("Invalid maximum threshold supplied: %v", maximumParseError)
+		server.redirectToDashboardWithEmailAlertMessage(responseWriter, request, "Maximum threshold must be a number.", true)
+		return
+	}
+
+	alert.MinimumThreshold = minimumThreshold
+	alert.MaximumThreshold = maximumThreshold
 
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 10*time.Second)
 	defer cancel()
 
-	_, sendError := server.EmailAlertService.SendAndLogAlert(contextWithTimeout, alert)
-	if sendError != nil {
-		log.Printf("Email alert failed: %v", sendError)
-		http.Error(responseWriter, sendError.Error(), http.StatusBadRequest)
+	_, creationError := server.EmailAlertService.CreateAlertDefinition(contextWithTimeout, alert)
+	if creationError != nil {
+		log.Printf("Email alert creation failed: %v", creationError)
+		server.redirectToDashboardWithEmailAlertMessage(responseWriter, request, creationError.Error(), true)
 		return
 	}
 
-	http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
+	server.redirectToDashboardWithEmailAlertMessage(responseWriter, request, "Email alert saved. We will notify you when it reaches your thresholds.", false)
 }
 
 func (server *Server) handleListOperations(responseWriter http.ResponseWriter, request *http.Request) {
@@ -315,6 +307,7 @@ func (server *Server) handleOperationHistory(responseWriter http.ResponseWriter,
 
 	operationPageNumber := parsePageNumber(request.URL.Query().Get("operations_page"))
 	executionPageNumber := parsePageNumber(request.URL.Query().Get("executions_page"))
+	dailyPurchasePageNumber := parsePageNumber(request.URL.Query().Get("daily_purchase_page"))
 	pageSize := 25
 
 	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 8*time.Second)
@@ -333,8 +326,16 @@ func (server *Server) handleOperationHistory(responseWriter http.ResponseWriter,
 		http.Error(responseWriter, "Could not fetch execution history", http.StatusInternalServerError)
 		return
 	}
+	executions = filterExecutionsExcludingOperationType(executions, domain.TradingOperationTypeDailyBuy)
 
-	historyViewModel := server.buildOperationHistoryViewModel(operations, executions, operationPageNumber, executionPageNumber, pageSize)
+	dailyPurchaseExecutions, dailyExecutionsError := server.TradingScheduleService.ListExecutionsPageByOperationType(contextWithTimeout, pageSize+1, dailyPurchasePageNumber, domain.TradingOperationTypeDailyBuy)
+	if dailyExecutionsError != nil {
+		log.Printf("Could not fetch daily purchase history: %v", dailyExecutionsError)
+		http.Error(responseWriter, "Could not fetch daily purchase history", http.StatusInternalServerError)
+		return
+	}
+
+	historyViewModel := server.buildOperationHistoryViewModel(operations, executions, dailyPurchaseExecutions, operationPageNumber, executionPageNumber, dailyPurchasePageNumber, pageSize)
 
 	templateError := server.Templates.ExecuteTemplate(responseWriter, "operations_history.html", historyViewModel)
 	if templateError != nil {
@@ -409,6 +410,33 @@ func (server *Server) handleUpdateBinanceEnvironment(responseWriter http.Respons
 	http.Redirect(responseWriter, request, "/", http.StatusSeeOther)
 }
 
+func (server *Server) handleUpdateDailyPurchaseSettings(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	tradingPairSymbol := request.FormValue("daily_purchase_trading_pair_symbol")
+	amountText := request.FormValue("daily_purchase_amount")
+	purchaseAmount, amountParseError := strconv.ParseFloat(amountText, 64)
+	if amountParseError != nil {
+		log.Printf("Invalid daily purchase amount supplied: %v", amountParseError)
+		server.redirectToDashboardWithDailyPurchaseMessage(responseWriter, request, "Daily purchase amount must be a number.", true)
+		return
+	}
+
+	saveContext, saveCancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer saveCancel()
+	_, saveError := server.DailyPurchaseService.SaveSettings(saveContext, tradingPairSymbol, purchaseAmount)
+	if saveError != nil {
+		log.Printf("Daily purchase settings update failed: %v", saveError)
+		server.redirectToDashboardWithDailyPurchaseMessage(responseWriter, request, saveError.Error(), true)
+		return
+	}
+
+	server.redirectToDashboardWithDailyPurchaseMessage(responseWriter, request, "Daily purchase settings saved successfully.", false)
+}
+
 func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
@@ -433,6 +461,48 @@ func (server *Server) handleBinanceSymbols(responseWriter http.ResponseWriter, r
 	}
 }
 
+func (server *Server) handleBinancePrice(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	tradingPairSymbol := request.URL.Query().Get("symbol")
+	if tradingPairSymbol == "" {
+		http.Error(responseWriter, "Missing symbol parameter", http.StatusBadRequest)
+		return
+	}
+
+	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 6*time.Second)
+	defer cancel()
+
+	currentPrice, priceError := server.BinancePriceService.GetCurrentPrice(contextWithTimeout, tradingPairSymbol)
+	if priceError != nil {
+		log.Printf("Could not fetch Binance price for %s: %v", tradingPairSymbol, priceError)
+		http.Error(responseWriter, "Could not fetch price", http.StatusBadGateway)
+		return
+	}
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	encodeError := json.NewEncoder(responseWriter).Encode(BinancePriceResponse{Symbol: tradingPairSymbol, Price: currentPrice})
+	if encodeError != nil {
+		log.Printf("Could not encode price: %v", encodeError)
+		http.Error(responseWriter, "Failed to serialize price", http.StatusInternalServerError)
+	}
+}
+
+func (server *Server) buildDashboardViewModelWithRequest(request *http.Request) (*DashboardViewModel, error) {
+	dashboardViewModel, loadError := server.buildDashboardViewModel(request.Context())
+	if loadError != nil {
+		return nil, loadError
+	}
+
+	server.applyPurchaseFormOverridesFromRequest(dashboardViewModel, request)
+	server.applyDailyPurchaseFormOverridesFromRequest(dashboardViewModel, request)
+	server.applyEmailAlertFormOverridesFromRequest(dashboardViewModel, request)
+	return dashboardViewModel, nil
+}
+
 func (server *Server) buildDashboardViewModel(requestContext context.Context) (*DashboardViewModel, error) {
         activeEnvironment := server.CredentialService.GetActiveEnvironmentConfiguration()
 
@@ -449,11 +519,37 @@ func (server *Server) buildDashboardViewModel(requestContext context.Context) (*
 	if executionError != nil {
 		return nil, executionError
 	}
+	executionHistory = filterExecutionsExcludingOperationType(executionHistory, domain.TradingOperationTypeDailyBuy)
 
 	openOrders, openOrdersError := server.fetchOpenOrders(contextWithTimeout)
 	var openOrdersErrorMessage string
 	if openOrdersError != nil {
 		openOrdersErrorMessage = openOrdersError.Error()
+	}
+
+	dailyPurchaseSettings, dailySettingsError := server.DailyPurchaseService.GetActiveSettings(contextWithTimeout)
+	var dailyPurchaseErrorMessage string
+	if dailySettingsError != nil {
+		log.Printf("Daily purchase settings lookup failed: %v", dailySettingsError)
+		dailyPurchaseErrorMessage = "Daily purchase settings could not be loaded."
+	}
+
+	dailyPurchaseTradingPair := ""
+	dailyPurchaseAmount := ""
+	dailyPurchaseHourUTC := server.SettingsSummary.DailyPurchaseHourUTC
+	if dailyPurchaseSettings != nil {
+		dailyPurchaseTradingPair = dailyPurchaseSettings.TradingPairSymbol
+		dailyPurchaseAmount = formatFloatForInputValue(dailyPurchaseSettings.PurchaseAmount)
+		if dailyPurchaseSettings.ExecutionHourUTC >= 0 && dailyPurchaseSettings.ExecutionHourUTC <= 23 {
+			dailyPurchaseHourUTC = dailyPurchaseSettings.ExecutionHourUTC
+		}
+	}
+
+	dailyPurchaseExecutions, dailyExecutionsError := server.TradingScheduleService.ListRecentExecutionsByOperationType(contextWithTimeout, 20, domain.TradingOperationTypeDailyBuy)
+	var dailyPurchaseExecutionsErrorMessage string
+	if dailyExecutionsError != nil {
+		log.Printf("Daily purchase execution lookup failed: %v", dailyExecutionsError)
+		dailyPurchaseExecutionsErrorMessage = "Daily purchase history could not be loaded."
 	}
 
 	return &DashboardViewModel{
@@ -472,7 +568,176 @@ func (server *Server) buildDashboardViewModel(requestContext context.Context) (*
 		ActiveBinanceEnvironment:     activeEnvironment.EnvironmentName,
 		OpenOrders:                   openOrders,
 		OpenOrdersError:              openOrdersErrorMessage,
+		PurchaseTradingPairSymbol:    server.SettingsSummary.TradingPairSymbol,
+		PurchaseCapitalThreshold:     formatFloatForInputValue(server.SettingsSummary.CapitalThreshold),
+		PurchaseTargetProfitPercent:  formatFloatForInputValue(server.SettingsSummary.TargetProfitPercent),
+		DailyPurchaseTradingPair:     dailyPurchaseTradingPair,
+		DailyPurchaseAmount:          dailyPurchaseAmount,
+		DailyPurchaseHourUTC:         dailyPurchaseHourUTC,
+		DailyPurchaseErrorMessage:    dailyPurchaseErrorMessage,
+		DailyPurchaseExecutions:      dailyPurchaseExecutions,
+		DailyPurchaseExecutionsError: dailyPurchaseExecutionsErrorMessage,
+		EmailAlertRecipientAddress:   "",
+		EmailAlertTradingPairSymbol:  "",
+		EmailAlertMinimumThreshold:   "",
+		EmailAlertMaximumThreshold:   "",
 	}, nil
+}
+
+func (server *Server) applyPurchaseFormOverridesFromRequest(viewModel *DashboardViewModel, request *http.Request) {
+	queryValues := request.URL.Query()
+	if purchaseErrorMessage := queryValues.Get("purchase_error"); purchaseErrorMessage != "" {
+		viewModel.PurchaseErrorMessage = purchaseErrorMessage
+	}
+
+	if tradingPairSymbol := queryValues.Get("trading_pair_symbol"); tradingPairSymbol != "" {
+		viewModel.PurchaseTradingPairSymbol = tradingPairSymbol
+	}
+
+	if capitalThreshold := queryValues.Get("capital_threshold"); capitalThreshold != "" {
+		viewModel.PurchaseCapitalThreshold = capitalThreshold
+	}
+
+	if targetProfitPercent := queryValues.Get("target_profit_percent"); targetProfitPercent != "" {
+		viewModel.PurchaseTargetProfitPercent = targetProfitPercent
+	}
+}
+
+func (server *Server) applyDailyPurchaseFormOverridesFromRequest(viewModel *DashboardViewModel, request *http.Request) {
+	queryValues := request.URL.Query()
+	if dailyPurchaseErrorMessage := queryValues.Get("daily_purchase_error"); dailyPurchaseErrorMessage != "" {
+		viewModel.DailyPurchaseErrorMessage = dailyPurchaseErrorMessage
+	}
+	if dailyPurchaseSuccessMessage := queryValues.Get("daily_purchase_success"); dailyPurchaseSuccessMessage != "" {
+		viewModel.DailyPurchaseSuccessMessage = dailyPurchaseSuccessMessage
+	}
+	if dailyPurchaseTradingPair := queryValues.Get("daily_purchase_trading_pair"); dailyPurchaseTradingPair != "" {
+		viewModel.DailyPurchaseTradingPair = dailyPurchaseTradingPair
+	}
+	if dailyPurchaseAmount := queryValues.Get("daily_purchase_amount"); dailyPurchaseAmount != "" {
+		viewModel.DailyPurchaseAmount = dailyPurchaseAmount
+	}
+}
+
+func (server *Server) applyEmailAlertFormOverridesFromRequest(viewModel *DashboardViewModel, request *http.Request) {
+	queryValues := request.URL.Query()
+	if emailAlertErrorMessage := queryValues.Get("email_alert_error"); emailAlertErrorMessage != "" {
+		viewModel.EmailAlertErrorMessage = emailAlertErrorMessage
+	}
+	if emailAlertSuccessMessage := queryValues.Get("email_alert_success"); emailAlertSuccessMessage != "" {
+		viewModel.EmailAlertSuccessMessage = emailAlertSuccessMessage
+	}
+	if recipientAddress := queryValues.Get("email_alert_recipient"); recipientAddress != "" {
+		viewModel.EmailAlertRecipientAddress = recipientAddress
+	}
+	if tradingPairSymbol := queryValues.Get("email_alert_trading_pair"); tradingPairSymbol != "" {
+		viewModel.EmailAlertTradingPairSymbol = tradingPairSymbol
+	}
+	if minimumThreshold := queryValues.Get("email_alert_min_threshold"); minimumThreshold != "" {
+		viewModel.EmailAlertMinimumThreshold = minimumThreshold
+	}
+	if maximumThreshold := queryValues.Get("email_alert_max_threshold"); maximumThreshold != "" {
+		viewModel.EmailAlertMaximumThreshold = maximumThreshold
+	}
+}
+
+func (server *Server) redirectToDashboardWithPurchaseError(responseWriter http.ResponseWriter, request *http.Request, userFacingMessage string) {
+	queryValues := url.Values{}
+	if userFacingMessage != "" {
+		queryValues.Set("purchase_error", userFacingMessage)
+	}
+
+	tradingPairSymbol := request.FormValue("trading_pair_symbol")
+	if tradingPairSymbol != "" {
+		queryValues.Set("trading_pair_symbol", tradingPairSymbol)
+	}
+
+	capitalThreshold := request.FormValue("capital_threshold")
+	if capitalThreshold != "" {
+		queryValues.Set("capital_threshold", capitalThreshold)
+	}
+
+	targetProfitPercent := request.FormValue("target_profit_percent")
+	if targetProfitPercent != "" {
+		queryValues.Set("target_profit_percent", targetProfitPercent)
+	}
+
+	redirectPath := "/"
+	if encodedQuery := queryValues.Encode(); encodedQuery != "" {
+		redirectPath = redirectPath + "?" + encodedQuery
+	}
+
+	http.Redirect(responseWriter, request, redirectPath, http.StatusSeeOther)
+}
+
+func (server *Server) redirectToDashboardWithDailyPurchaseMessage(responseWriter http.ResponseWriter, request *http.Request, message string, isError bool) {
+	queryValues := url.Values{}
+	if message != "" {
+		if isError {
+			queryValues.Set("daily_purchase_error", message)
+		} else {
+			queryValues.Set("daily_purchase_success", message)
+		}
+	}
+
+	tradingPairSymbol := request.FormValue("daily_purchase_trading_pair_symbol")
+	if tradingPairSymbol != "" {
+		queryValues.Set("daily_purchase_trading_pair", tradingPairSymbol)
+	}
+
+	purchaseAmount := request.FormValue("daily_purchase_amount")
+	if purchaseAmount != "" {
+		queryValues.Set("daily_purchase_amount", purchaseAmount)
+	}
+
+	redirectPath := "/"
+	if encodedQuery := queryValues.Encode(); encodedQuery != "" {
+		redirectPath = redirectPath + "?" + encodedQuery
+	}
+
+	http.Redirect(responseWriter, request, redirectPath, http.StatusSeeOther)
+}
+
+func (server *Server) redirectToDashboardWithEmailAlertMessage(responseWriter http.ResponseWriter, request *http.Request, message string, isError bool) {
+	queryValues := url.Values{}
+	if message != "" {
+		if isError {
+			queryValues.Set("email_alert_error", message)
+		} else {
+			queryValues.Set("email_alert_success", message)
+		}
+	}
+
+	recipientAddress := request.FormValue("recipient_address")
+	if recipientAddress != "" {
+		queryValues.Set("email_alert_recipient", recipientAddress)
+	}
+
+	tradingPairSymbol := request.FormValue("alert_trading_pair_symbol")
+	if tradingPairSymbol != "" {
+		queryValues.Set("email_alert_trading_pair", tradingPairSymbol)
+	}
+
+	minimumThreshold := request.FormValue("alert_min_threshold")
+	if minimumThreshold != "" {
+		queryValues.Set("email_alert_min_threshold", minimumThreshold)
+	}
+
+	maximumThreshold := request.FormValue("alert_max_threshold")
+	if maximumThreshold != "" {
+		queryValues.Set("email_alert_max_threshold", maximumThreshold)
+	}
+
+	redirectPath := "/"
+	if encodedQuery := queryValues.Encode(); encodedQuery != "" {
+		redirectPath = redirectPath + "?" + encodedQuery
+	}
+
+	http.Redirect(responseWriter, request, redirectPath, http.StatusSeeOther)
+}
+
+func formatFloatForInputValue(value float64) string {
+	return fmt.Sprintf("%.2f", value)
 }
 
 func (server *Server) renderErrorPage(responseWriter http.ResponseWriter, message string) {
@@ -501,6 +766,22 @@ type DashboardViewModel struct {
 	OpenOrders                   []service.BinanceOpenOrder
 	OpenOrdersError              string
 	PurchaseErrorMessage         string
+	PurchaseTradingPairSymbol    string
+	PurchaseCapitalThreshold     string
+	PurchaseTargetProfitPercent  string
+	DailyPurchaseTradingPair     string
+	DailyPurchaseAmount          string
+	DailyPurchaseHourUTC         int
+	DailyPurchaseErrorMessage    string
+	DailyPurchaseSuccessMessage  string
+	DailyPurchaseExecutions      []domain.TradingOperationExecution
+	DailyPurchaseExecutionsError string
+	EmailAlertRecipientAddress   string
+	EmailAlertTradingPairSymbol  string
+	EmailAlertMinimumThreshold   string
+	EmailAlertMaximumThreshold   string
+	EmailAlertErrorMessage        string
+	EmailAlertSuccessMessage      string
 }
 
 type OperationHistoryViewModel struct {
@@ -512,13 +793,22 @@ type OperationHistoryViewModel struct {
 	ExecutionPageNumber      int
 	HasPreviousExecutionPage bool
 	HasNextExecutionPage     bool
+	DailyPurchasePageNumber  int
+	HasPreviousDailyPage     bool
+	HasNextDailyPage         bool
 	OpenOperations           []domain.TradingOperation
 	CompletedOperations      []domain.TradingOperation
 	ExecutionAttempts        []domain.TradingOperationExecution
+	DailyPurchaseExecutions  []domain.TradingOperationExecution
 }
 
 type BinanceSymbolsResponse struct {
         Symbols []string `json:"symbols"`
+}
+
+type BinancePriceResponse struct {
+        Symbol string  `json:"symbol"`
+        Price  float64 `json:"price"`
 }
 
 func (server *Server) reconcileFilledSellOrders(requestContext context.Context) {
@@ -687,6 +977,7 @@ func (server *Server) handleRevalidateBinanceCredentials(responseWriter http.Res
 type DashboardSettingsSummary struct {
 	AutomaticSellIntervalMinutes int
 	DailyPurchaseIntervalMinutes int
+	DailyPurchaseHourUTC         int
 	BinanceAPIBaseURL            string
 	ActiveBinanceEnvironment     string
 	ApplicationBaseURL           string
@@ -715,9 +1006,10 @@ func (server *Server) refreshEnvironmentConfiguration() {
 	server.SettingsSummary.ActiveBinanceEnvironment = activeEnvironment.EnvironmentName
 }
 
-func (server *Server) buildOperationHistoryViewModel(operations []domain.TradingOperation, executions []domain.TradingOperationExecution, operationPageNumber int, executionPageNumber int, pageSize int) OperationHistoryViewModel {
+func (server *Server) buildOperationHistoryViewModel(operations []domain.TradingOperation, executions []domain.TradingOperationExecution, dailyPurchaseExecutions []domain.TradingOperationExecution, operationPageNumber int, executionPageNumber int, dailyPurchasePageNumber int, pageSize int) OperationHistoryViewModel {
 	hasNextOperationPage := false
 	hasNextExecutionPage := false
+	hasNextDailyPurchasePage := false
 
 	if len(operations) > pageSize {
 		hasNextOperationPage = true
@@ -727,6 +1019,11 @@ func (server *Server) buildOperationHistoryViewModel(operations []domain.Trading
 	if len(executions) > pageSize {
 		hasNextExecutionPage = true
 		executions = executions[:pageSize]
+	}
+
+	if len(dailyPurchaseExecutions) > pageSize {
+		hasNextDailyPurchasePage = true
+		dailyPurchaseExecutions = dailyPurchaseExecutions[:pageSize]
 	}
 
 	openOperations := make([]domain.TradingOperation, 0)
@@ -750,10 +1047,25 @@ func (server *Server) buildOperationHistoryViewModel(operations []domain.Trading
 		ExecutionPageNumber:      executionPageNumber,
 		HasPreviousExecutionPage: executionPageNumber > 1,
 		HasNextExecutionPage:     hasNextExecutionPage,
+		DailyPurchasePageNumber:  dailyPurchasePageNumber,
+		HasPreviousDailyPage:     dailyPurchasePageNumber > 1,
+		HasNextDailyPage:         hasNextDailyPurchasePage,
 		OpenOperations:           openOperations,
 		CompletedOperations:      completedOperations,
 		ExecutionAttempts:        executions,
+		DailyPurchaseExecutions:  dailyPurchaseExecutions,
 	}
+}
+
+func filterExecutionsExcludingOperationType(executions []domain.TradingOperationExecution, excludedOperationType string) []domain.TradingOperationExecution {
+	filteredExecutions := make([]domain.TradingOperationExecution, 0, len(executions))
+	for _, execution := range executions {
+		if execution.OperationType == excludedOperationType {
+			continue
+		}
+		filteredExecutions = append(filteredExecutions, execution)
+	}
+	return filteredExecutions
 }
 
 func parsePageNumber(pageValue string) int {
