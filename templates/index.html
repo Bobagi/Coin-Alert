@@ -40,6 +40,19 @@
         .current-price-label { font-weight: 700; color: #e2e8f0; }
         button.current-price-reload { width: auto; padding: 6px 10px; border-radius: 999px; font-size: 0.85em; background: linear-gradient(120deg, #38bdf8, #6366f1); }
         button.current-price-reload:disabled { opacity: 0.6; cursor: not-allowed; }
+        .chart-section { margin-top: 24px; display: grid; gap: 16px; }
+        .chart-add-card { width: 100%; }
+        .chart-add-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        button.chart-add-button { width: auto; font-size: 1.2em; padding: 8px 14px; border-radius: 999px; background: linear-gradient(120deg, #22c55e, #16a34a); }
+        .chart-selector { margin-top: 12px; display: grid; gap: 10px; }
+        .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+        .chart-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .chart-meta { display: flex; flex-direction: column; gap: 6px; }
+        .chart-remove-button { width: auto; padding: 6px 10px; border-radius: 999px; background: linear-gradient(120deg, #ef4444, #dc2626); font-size: 0.85em; }
+        .chart-configuration { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+        .chart-svg { width: 100%; height: 200px; margin-top: 12px; background: #0b1220; border: 1px solid #1f2937; border-radius: 12px; }
+        .chart-line { fill: none; stroke: #38bdf8; stroke-width: 2; }
+        .chart-point { fill: #fbbf24; stroke: #0f172a; stroke-width: 2; }
         .loading-indicator { display: inline-flex; align-items: center; gap: 8px; color: #94a3b8; font-size: 0.9em; }
         .loading-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
@@ -209,6 +222,60 @@
                 <div class="muted">Application base URL</div>
                 <div class="pill">{{.ApplicationBaseURL}}</div>
             </div>
+        </div>
+    </div>
+    <div class="chart-section" x-data="realTimeChartDashboard()" x-init="initializeChartDashboard()">
+        <div class="card chart-add-card">
+            <div class="chart-add-header">
+                <div>
+                    <h2>Adicionar gráfico</h2>
+                    <p class="muted">Escolha um par e acompanhe a variação em tempo real.</p>
+                </div>
+                <button type="button" class="chart-add-button" x-on:click.prevent="toggleChartSelector()">+</button>
+            </div>
+            <div class="chart-selector" x-show="isChartSelectorOpen" x-transition>
+                <label for="chart_symbol_selector">Selecione o par</label>
+                <div class="dropdown">
+                    <input id="chart_symbol_selector" x-model="chartSymbolQuery" x-on:input.debounce.300ms="handleChartSymbolInput()" x-on:keydown.arrow-down.prevent="highlightNextChartSymbol()" x-on:keydown.arrow-up.prevent="highlightPreviousChartSymbol()" x-on:keydown.enter.prevent="selectHighlightedChartSymbol()" placeholder="E.g. BTCBRL" autocomplete="off">
+                    <div class="dropdown-list" x-show="filteredChartSymbols.length" x-transition>
+                        <template x-for="(symbol, index) in filteredChartSymbols" :key="symbol">
+                            <div class="dropdown-item" :class="{ 'active': highlightedChartSymbolIndex === index }" x-text="symbol" x-on:mouseenter="highlightedChartSymbolIndex = index" x-on:mousedown.prevent="selectChartSymbol(symbol)"></div>
+                        </template>
+                    </div>
+                </div>
+                <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                    <button type="button" x-on:click.prevent="addChartFromSelection()" x-bind:disabled="!chartSymbolQuery.trim()">Criar gráfico</button>
+                    <button type="button" class="secondary" style="width:auto;" x-on:click.prevent="clearChartSelection()">Cancelar</button>
+                </div>
+                <p class="muted" x-text="chartSelectionError" x-show="chartSelectionError"></p>
+            </div>
+        </div>
+        <div class="chart-grid" x-show="charts.length">
+            <template x-for="chart in charts" :key="chart.id">
+                <div class="card">
+                    <div class="chart-card-header">
+                        <div class="chart-meta">
+                            <div style="font-weight:700;" x-text="chart.symbol"></div>
+                            <div class="muted" x-text="chart.currentPriceLabel"></div>
+                        </div>
+                        <button type="button" class="chart-remove-button" x-on:click.prevent="removeChart(chart.id)">Remover</button>
+                    </div>
+                    <div class="chart-configuration">
+                        <label :for="`period-${chart.id}`">Período</label>
+                        <select :id="`period-${chart.id}`" x-model="chart.periodKey" x-on:change="refreshChartHistory(chart)">
+                            <template x-for="option in chartPeriodOptions" :key="option.value">
+                                <option :value="option.value" x-text="option.label"></option>
+                            </template>
+                        </select>
+                        <div class="muted" x-show="chart.isLoading">Atualizando dados...</div>
+                        <div class="muted" style="color:#ef4444;" x-show="chart.errorMessage" x-text="chart.errorMessage"></div>
+                    </div>
+                    <svg class="chart-svg" :viewBox="`0 0 ${chartViewportWidth} ${chartViewportHeight}`" preserveAspectRatio="none">
+                        <path class="chart-line" :d="buildChartLinePath(chart)"></path>
+                        <circle class="chart-point" :cx="resolveCurrentPointX(chart)" :cy="resolveCurrentPointY(chart)" r="4" x-show="chart.currentPrice !== null"></circle>
+                    </svg>
+                </div>
+            </template>
         </div>
     </div>
     <div class="grid" style="margin-top: 20px;">
@@ -392,6 +459,49 @@
     </div>
 </div>
 <script>
+    const QUOTE_CURRENCY_SYMBOLS = [
+        'USDT', 'USDC', 'BUSD', 'FDUSD', 'TUSD', 'USDP',
+        'BRL', 'EUR', 'GBP', 'TRY', 'JPY', 'AUD',
+        'BTC', 'ETH', 'BNB', 'DAI'
+    ];
+
+    function resolveQuoteCurrencySymbol(tradingPairSymbol) {
+        const normalizedSymbol = tradingPairSymbol.trim().toUpperCase();
+        const orderedQuoteSymbols = QUOTE_CURRENCY_SYMBOLS.slice().sort((firstSymbol, secondSymbol) => secondSymbol.length - firstSymbol.length);
+        for (const quoteSymbol of orderedQuoteSymbols) {
+            if (normalizedSymbol.endsWith(quoteSymbol)) {
+                return quoteSymbol;
+            }
+        }
+        if (normalizedSymbol.length > 3) {
+            return normalizedSymbol.slice(-3);
+        }
+        return normalizedSymbol;
+    }
+
+    function formatPriceForDisplay(priceValue, quoteSymbol) {
+        if (quoteSymbol === 'BRL') {
+            const formattedBRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(priceValue);
+            return `${formattedBRL} (BRL)`;
+        }
+        if (['USDT', 'USDC', 'BUSD', 'FDUSD', 'TUSD', 'USDP'].includes(quoteSymbol)) {
+            const formattedUSD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(priceValue);
+            return `${formattedUSD} (${quoteSymbol})`;
+        }
+        return `${Number(priceValue).toFixed(6)} ${quoteSymbol}`;
+    }
+
+    function buildCurrentPriceLabel(tradingPairSymbol, priceValue) {
+        const quoteSymbol = resolveQuoteCurrencySymbol(tradingPairSymbol);
+        const formattedPrice = formatPriceForDisplay(priceValue, quoteSymbol);
+        return `Current price for ${tradingPairSymbol} (${quoteSymbol}): ${formattedPrice}`;
+    }
+
+    function buildUnavailablePriceLabel(tradingPairSymbol) {
+        const quoteSymbol = resolveQuoteCurrencySymbol(tradingPairSymbol);
+        return `Current price for ${tradingPairSymbol} (${quoteSymbol}) unavailable.`;
+    }
+
     function dashboard(initialValidationStatus) {
         return {
             initialValidationStatus,
@@ -524,9 +634,9 @@
                     }
                     const body = await response.json();
                     if (body.price) {
-                        this.currentPriceText = `Current price for ${symbol}: ${Number(body.price).toFixed(6)}`;
+                        this.currentPriceText = buildCurrentPriceLabel(symbol, body.price);
                     } else {
-                        this.currentPriceText = `Current price for ${symbol} unavailable.`;
+                        this.currentPriceText = buildUnavailablePriceLabel(symbol);
                     }
                 } catch (error) {
                     console.error('Could not fetch current price', error);
@@ -544,6 +654,270 @@
                 this.lastPriceSymbol = '';
                 this.updatePrice();
             }
+        };
+    }
+
+    function realTimeChartDashboard() {
+        return {
+            charts: [],
+            chartSymbolQuery: '',
+            filteredChartSymbols: [],
+            highlightedChartSymbolIndex: -1,
+            chartSelectionError: '',
+            isChartSelectorOpen: false,
+            chartViewportWidth: 600,
+            chartViewportHeight: 200,
+            chartHistoryWindowSize: 30,
+            chartPeriodOptions: [
+                { value: '1Y', label: '1Y' },
+                { value: '3M', label: '3M' },
+                { value: '1M', label: '1M' },
+                { value: '1W', label: '1W' },
+                { value: '1D', label: '1D' },
+            ],
+            initializeChartDashboard() {
+                this.resetChartSymbolFilter();
+            },
+            toggleChartSelector() {
+                this.isChartSelectorOpen = !this.isChartSelectorOpen;
+                if (this.isChartSelectorOpen) {
+                    this.resetChartSymbolFilter();
+                }
+            },
+            handleChartSymbolInput() {
+                this.filterChartSymbols();
+            },
+            filterChartSymbols() {
+                const searchValue = this.chartSymbolQuery.trim().toUpperCase();
+                const availableSymbols = Alpine.store('symbolStore').symbols || [];
+                if (!searchValue) {
+                    this.filteredChartSymbols = availableSymbols.slice(0, 20);
+                    this.highlightedChartSymbolIndex = this.filteredChartSymbols.length ? 0 : -1;
+                    return;
+                }
+                this.filteredChartSymbols = availableSymbols
+                    .filter(symbol => symbol.includes(searchValue))
+                    .slice(0, 20);
+                this.highlightedChartSymbolIndex = this.filteredChartSymbols.length ? 0 : -1;
+            },
+            highlightNextChartSymbol() {
+                if (!this.filteredChartSymbols.length) {
+                    return;
+                }
+                this.highlightedChartSymbolIndex = (this.highlightedChartSymbolIndex + 1) % this.filteredChartSymbols.length;
+            },
+            highlightPreviousChartSymbol() {
+                if (!this.filteredChartSymbols.length) {
+                    return;
+                }
+                this.highlightedChartSymbolIndex = (this.highlightedChartSymbolIndex - 1 + this.filteredChartSymbols.length) % this.filteredChartSymbols.length;
+            },
+            selectHighlightedChartSymbol() {
+                if (this.highlightedChartSymbolIndex < 0 || this.highlightedChartSymbolIndex >= this.filteredChartSymbols.length) {
+                    return;
+                }
+                this.selectChartSymbol(this.filteredChartSymbols[this.highlightedChartSymbolIndex]);
+            },
+            selectChartSymbol(symbol) {
+                this.chartSymbolQuery = symbol;
+                this.filteredChartSymbols = [];
+                this.highlightedChartSymbolIndex = -1;
+            },
+            resetChartSymbolFilter() {
+                this.chartSymbolQuery = '';
+                this.filteredChartSymbols = [];
+                this.highlightedChartSymbolIndex = -1;
+                this.chartSelectionError = '';
+            },
+            clearChartSelection() {
+                this.resetChartSymbolFilter();
+                this.isChartSelectorOpen = false;
+            },
+            addChartFromSelection() {
+                const symbol = this.chartSymbolQuery.trim().toUpperCase();
+                if (!symbol) {
+                    this.chartSelectionError = 'Selecione um par válido.';
+                    return;
+                }
+                if (this.charts.some(chart => chart.symbol === symbol)) {
+                    this.chartSelectionError = 'Este par já está em um gráfico ativo.';
+                    return;
+                }
+                this.chartSelectionError = '';
+                const chartState = this.buildChartState(symbol);
+                this.charts.push(chartState);
+                this.initializeChartData(chartState);
+                this.startChartPolling(chartState);
+                this.resetChartSymbolFilter();
+                this.isChartSelectorOpen = false;
+            },
+            buildChartState(symbol) {
+                return {
+                    id: `chart-${symbol}-${Date.now()}`,
+                    symbol,
+                    periodKey: '1Y',
+                    historyPoints: [],
+                    currentPrice: null,
+                    currentPriceLabel: '',
+                    minimumPrice: null,
+                    maximumPrice: null,
+                    isLoading: true,
+                    errorMessage: '',
+                    pollingIntervalId: null,
+                };
+            },
+            async initializeChartData(chart) {
+                chart.isLoading = true;
+                chart.errorMessage = '';
+                try {
+                    const historicalResponse = await fetch(`/binance/history?symbol=${encodeURIComponent(chart.symbol)}&period=${encodeURIComponent(chart.periodKey)}`);
+                    if (!historicalResponse.ok) {
+                        chart.errorMessage = 'Não foi possível carregar o histórico.';
+                        return;
+                    }
+                    const historicalBody = await historicalResponse.json();
+                    const historicalPoints = historicalBody.points || [];
+                    this.applyHistoricalPrices(chart, historicalPoints);
+                    await this.refreshChartCurrentPrice(chart);
+                } catch (error) {
+                    console.error('Could not load chart history', error);
+                    chart.errorMessage = 'Não foi possível carregar o histórico.';
+                } finally {
+                    chart.isLoading = false;
+                }
+            },
+            applyHistoricalPrices(chart, historicalPoints) {
+                if (!historicalPoints.length) {
+                    chart.historyPoints = [];
+                    chart.minimumPrice = null;
+                    chart.maximumPrice = null;
+                    return;
+                }
+                const prices = historicalPoints.map(point => point.price);
+                chart.minimumPrice = Math.min(...prices);
+                chart.maximumPrice = Math.max(...prices);
+                const trimmedHistory = historicalPoints.slice(-this.chartHistoryWindowSize).map(point => ({
+                    price: point.price,
+                    timestamp: point.timestamp,
+                }));
+                chart.historyPoints = trimmedHistory;
+            },
+            async refreshChartHistory(chart) {
+                if (!chart) {
+                    return;
+                }
+                chart.isLoading = true;
+                chart.errorMessage = '';
+                try {
+                    const historicalResponse = await fetch(`/binance/history?symbol=${encodeURIComponent(chart.symbol)}&period=${encodeURIComponent(chart.periodKey)}`);
+                    if (!historicalResponse.ok) {
+                        chart.errorMessage = 'Não foi possível carregar o histórico.';
+                        return;
+                    }
+                    const historicalBody = await historicalResponse.json();
+                    const historicalPoints = historicalBody.points || [];
+                    this.applyHistoricalPrices(chart, historicalPoints);
+                } catch (error) {
+                    console.error('Could not refresh chart history', error);
+                    chart.errorMessage = 'Não foi possível carregar o histórico.';
+                } finally {
+                    chart.isLoading = false;
+                }
+            },
+            startChartPolling(chart) {
+                if (chart.pollingIntervalId) {
+                    clearInterval(chart.pollingIntervalId);
+                }
+                chart.pollingIntervalId = setInterval(() => {
+                    this.refreshChartCurrentPrice(chart);
+                }, 5000);
+            },
+            async refreshChartCurrentPrice(chart) {
+                try {
+                    const response = await fetch(`/binance/price?symbol=${encodeURIComponent(chart.symbol)}`);
+                    if (!response.ok) {
+                        chart.errorMessage = 'Não foi possível atualizar o preço atual.';
+                        return;
+                    }
+                    const body = await response.json();
+                    if (body.price) {
+                        this.recordLatestChartPrice(chart, body.price);
+                    }
+                } catch (error) {
+                    console.error('Could not refresh chart price', error);
+                    chart.errorMessage = 'Não foi possível atualizar o preço atual.';
+                }
+            },
+            recordLatestChartPrice(chart, priceValue) {
+                if (chart.currentPrice !== null) {
+                    chart.historyPoints.push({ price: chart.currentPrice, timestamp: Date.now() });
+                    if (chart.historyPoints.length > this.chartHistoryWindowSize) {
+                        chart.historyPoints = chart.historyPoints.slice(-this.chartHistoryWindowSize);
+                    }
+                }
+                chart.currentPrice = Number(priceValue);
+                chart.currentPriceLabel = buildCurrentPriceLabel(chart.symbol, chart.currentPrice);
+                if (chart.minimumPrice === null || chart.currentPrice < chart.minimumPrice) {
+                    chart.minimumPrice = chart.currentPrice;
+                }
+                if (chart.maximumPrice === null || chart.currentPrice > chart.maximumPrice) {
+                    chart.maximumPrice = chart.currentPrice;
+                }
+            },
+            removeChart(chartId) {
+                const chartIndex = this.charts.findIndex(chart => chart.id === chartId);
+                if (chartIndex === -1) {
+                    return;
+                }
+                const chart = this.charts[chartIndex];
+                if (chart.pollingIntervalId) {
+                    clearInterval(chart.pollingIntervalId);
+                }
+                this.charts.splice(chartIndex, 1);
+            },
+            buildChartLinePath(chart) {
+                const padding = 20;
+                const points = chart.historyPoints;
+                if (!points.length || chart.minimumPrice === null || chart.maximumPrice === null) {
+                    return '';
+                }
+                return points.map((point, index) => {
+                    const xValue = this.resolveChartXCoordinate(index, points.length, padding);
+                    const yValue = this.resolveChartYCoordinate(chart, point.price, padding);
+                    return `${index === 0 ? 'M' : 'L'} ${xValue} ${yValue}`;
+                }).join(' ');
+            },
+            resolveChartXCoordinate(index, totalPoints, padding) {
+                if (totalPoints <= 1) {
+                    return padding;
+                }
+                const usableWidth = this.chartViewportWidth - padding * 2;
+                return padding + (index / (totalPoints - 1)) * usableWidth;
+            },
+            resolveChartYCoordinate(chart, priceValue, padding) {
+                if (chart.minimumPrice === chart.maximumPrice) {
+                    return this.chartViewportHeight / 2;
+                }
+                const usableHeight = this.chartViewportHeight - padding * 2;
+                return this.chartViewportHeight - padding - ((priceValue - chart.minimumPrice) / (chart.maximumPrice - chart.minimumPrice)) * usableHeight;
+            },
+            resolveCurrentPointX(chart) {
+                if (!chart.historyPoints.length) {
+                    return this.chartViewportWidth - 20;
+                }
+                return this.resolveChartXCoordinate(chart.historyPoints.length, chart.historyPoints.length + 1, 20);
+            },
+            resolveCurrentPointY(chart) {
+                if (chart.currentPrice === null || chart.minimumPrice === null || chart.maximumPrice === null) {
+                    return this.chartViewportHeight / 2;
+                }
+                const padding = 20;
+                if (chart.minimumPrice === chart.maximumPrice) {
+                    return this.chartViewportHeight / 2;
+                }
+                const usableHeight = this.chartViewportHeight - padding * 2;
+                return this.chartViewportHeight - padding - ((chart.currentPrice - chart.minimumPrice) / (chart.maximumPrice - chart.minimumPrice)) * usableHeight;
+            },
         };
     }
 </script>
