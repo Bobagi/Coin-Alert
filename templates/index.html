@@ -502,6 +502,12 @@
         return `Current price for ${tradingPairSymbol} (${quoteSymbol}) unavailable.`;
     }
 
+    function isTradingPairSymbolAvailable(tradingPairSymbol) {
+        const normalizedSymbol = tradingPairSymbol.trim().toUpperCase();
+        const availableSymbols = Alpine.store('symbolStore').symbols || [];
+        return availableSymbols.includes(normalizedSymbol);
+    }
+
     const dashboardApiBaseUrl = "{{.ApplicationBaseURL}}";
 
     function resolveDashboardApiBaseUrl() {
@@ -644,6 +650,12 @@
                     this.lastPriceSymbol = '';
                     return;
                 }
+                if (!isTradingPairSymbolAvailable(symbol)) {
+                    this.currentPriceText = '';
+                    this.priceErrorMessage = 'Selecione um par válido da lista.';
+                    this.lastPriceSymbol = '';
+                    return;
+                }
                 if (symbol === this.lastPriceSymbol) {
                     return;
                 }
@@ -674,6 +686,12 @@
             refreshCurrentPrice() {
                 const symbol = this.query.trim().toUpperCase();
                 if (!symbol) {
+                    return;
+                }
+                if (!isTradingPairSymbolAvailable(symbol)) {
+                    this.currentPriceText = '';
+                    this.priceErrorMessage = 'Selecione um par válido da lista.';
+                    this.lastPriceSymbol = '';
                     return;
                 }
                 this.lastPriceSymbol = '';
@@ -764,7 +782,7 @@
                     this.chartSelectionError = 'Selecione um par válido.';
                     return;
                 }
-                if (!this.isSymbolAvailable(symbol)) {
+                if (!isTradingPairSymbolAvailable(symbol)) {
                     this.chartSelectionError = 'Selecione um par disponível na lista.';
                     return;
                 }
@@ -795,13 +813,14 @@
                     pollingIntervalId: null,
                 };
             },
-            isSymbolAvailable(symbol) {
-                const availableSymbols = Alpine.store('symbolStore').symbols || [];
-                return availableSymbols.includes(symbol);
-            },
             async initializeChartData(chart) {
                 chart.isLoading = true;
                 chart.errorMessage = '';
+                if (!isTradingPairSymbolAvailable(chart.symbol)) {
+                    chart.errorMessage = 'Par inválido. Selecione outro par.';
+                    chart.isLoading = false;
+                    return;
+                }
                 try {
                     const historicalResponse = await fetch(buildDashboardApiUrl(`/binance/history?symbol=${encodeURIComponent(chart.symbol)}&period=${encodeURIComponent(chart.periodKey)}`));
                     if (!historicalResponse.ok) {
@@ -841,6 +860,11 @@
                 }
                 chart.isLoading = true;
                 chart.errorMessage = '';
+                if (!isTradingPairSymbolAvailable(chart.symbol)) {
+                    chart.errorMessage = 'Par inválido. Selecione outro par.';
+                    chart.isLoading = false;
+                    return;
+                }
                 try {
                     const historicalResponse = await fetch(buildDashboardApiUrl(`/binance/history?symbol=${encodeURIComponent(chart.symbol)}&period=${encodeURIComponent(chart.periodKey)}`));
                     if (!historicalResponse.ok) {
@@ -866,6 +890,10 @@
                 }, 5000);
             },
             async refreshChartCurrentPrice(chart) {
+                if (!isTradingPairSymbolAvailable(chart.symbol)) {
+                    chart.errorMessage = 'Par inválido. Selecione outro par.';
+                    return;
+                }
                 try {
                     const response = await fetch(buildDashboardApiUrl(`/binance/price?symbol=${encodeURIComponent(chart.symbol)}`));
                     if (!response.ok) {
