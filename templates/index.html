@@ -502,6 +502,21 @@
         return `Current price for ${tradingPairSymbol} (${quoteSymbol}) unavailable.`;
     }
 
+    const dashboardApiBaseUrl = "{{.ApplicationBaseURL}}";
+
+    function resolveDashboardApiBaseUrl() {
+        const trimmedBaseUrl = dashboardApiBaseUrl.trim();
+        if (trimmedBaseUrl) {
+            return trimmedBaseUrl.replace(/\/$/, '');
+        }
+        return window.location.origin;
+    }
+
+    function buildDashboardApiUrl(relativePath) {
+        const normalizedPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+        return `${resolveDashboardApiBaseUrl()}${normalizedPath}`;
+    }
+
     function dashboard(initialValidationStatus) {
         return {
             initialValidationStatus,
@@ -511,7 +526,7 @@
             },
             async loadSymbols() {
                 try {
-                    const response = await fetch('/binance/symbols');
+                    const response = await fetch(buildDashboardApiUrl('/binance/symbols'));
                     if (!response.ok) return;
                     const body = await response.json();
                     Alpine.store('symbolStore').symbols = body.symbols || [];
@@ -534,7 +549,7 @@
                 this.validationError = '';
 
                 try {
-                    const response = await fetch('/settings/binance/revalidate', { method: 'POST' });
+                    const response = await fetch(buildDashboardApiUrl('/settings/binance/revalidate'), { method: 'POST' });
                     if (!response.ok) {
                         const errorBody = await response.text();
                         this.validationError = errorBody || 'Revalidation failed. Please try again.';
@@ -626,7 +641,7 @@
                 this.isPriceLoading = true;
                 this.priceErrorMessage = '';
                 try {
-                    const response = await fetch(`/binance/price?symbol=${encodeURIComponent(symbol)}`);
+                    const response = await fetch(buildDashboardApiUrl(`/binance/price?symbol=${encodeURIComponent(symbol)}`));
                     if (!response.ok) {
                         this.priceErrorMessage = 'Could not fetch current price.';
                         this.currentPriceText = '';
@@ -778,7 +793,7 @@
                 chart.isLoading = true;
                 chart.errorMessage = '';
                 try {
-                    const historicalResponse = await fetch(`/binance/history?symbol=${encodeURIComponent(chart.symbol)}&period=${encodeURIComponent(chart.periodKey)}`);
+                    const historicalResponse = await fetch(buildDashboardApiUrl(`/binance/history?symbol=${encodeURIComponent(chart.symbol)}&period=${encodeURIComponent(chart.periodKey)}`));
                     if (!historicalResponse.ok) {
                         chart.errorMessage = 'Não foi possível carregar o histórico.';
                         return;
@@ -817,7 +832,7 @@
                 chart.isLoading = true;
                 chart.errorMessage = '';
                 try {
-                    const historicalResponse = await fetch(`/binance/history?symbol=${encodeURIComponent(chart.symbol)}&period=${encodeURIComponent(chart.periodKey)}`);
+                    const historicalResponse = await fetch(buildDashboardApiUrl(`/binance/history?symbol=${encodeURIComponent(chart.symbol)}&period=${encodeURIComponent(chart.periodKey)}`));
                     if (!historicalResponse.ok) {
                         chart.errorMessage = 'Não foi possível carregar o histórico.';
                         return;
@@ -842,7 +857,7 @@
             },
             async refreshChartCurrentPrice(chart) {
                 try {
-                    const response = await fetch(`/binance/price?symbol=${encodeURIComponent(chart.symbol)}`);
+                    const response = await fetch(buildDashboardApiUrl(`/binance/price?symbol=${encodeURIComponent(chart.symbol)}`));
                     if (!response.ok) {
                         chart.errorMessage = 'Não foi possível atualizar o preço atual.';
                         return;
