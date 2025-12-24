@@ -739,6 +739,10 @@
                     this.chartSelectionError = 'Selecione um par válido.';
                     return;
                 }
+                if (!this.isSymbolAvailable(symbol)) {
+                    this.chartSelectionError = 'Selecione um par disponível na lista.';
+                    return;
+                }
                 if (this.charts.some(chart => chart.symbol === symbol)) {
                     this.chartSelectionError = 'Este par já está em um gráfico ativo.';
                     return;
@@ -765,6 +769,10 @@
                     errorMessage: '',
                     pollingIntervalId: null,
                 };
+            },
+            isSymbolAvailable(symbol) {
+                const availableSymbols = Alpine.store('symbolStore').symbols || [];
+                return availableSymbols.includes(symbol);
             },
             async initializeChartData(chart) {
                 chart.isLoading = true;
