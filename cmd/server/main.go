@@ -46,6 +46,7 @@ func main() {
 	emailAlertService := service.NewEmailAlertService(emailAlertRepository, applicationConfiguration.EmailSenderAddress, applicationConfiguration.EmailSenderPassword, applicationConfiguration.EmailSMTPHost, applicationConfiguration.EmailSMTPPort)
 	tradingScheduleService := service.NewTradingScheduleService(scheduledOperationRepository, executionRepository, applicationConfiguration.AutomaticSellIntervalMinutes, applicationConfiguration.TradingPairSymbol, applicationConfiguration.TradingCapitalThreshold, applicationConfiguration.TargetProfitPercent)
 	binancePriceService := service.NewBinancePriceService(initialEnvironmentConfiguration)
+	binanceHistoricalPriceService := service.NewBinanceHistoricalPriceService(initialEnvironmentConfiguration)
 	automationService := service.NewTradingAutomationService(tradingOperationService, binancePriceService, tradingScheduleService, applicationConfiguration.TradingPairSymbol, applicationConfiguration.AutomaticSellIntervalMinutes)
 	dailyPurchaseSettingsService := service.NewDailyPurchaseSettingsService(dailyPurchaseSettingsRepository, applicationConfiguration.DailyPurchaseHourUTC)
 	binanceCredentialValidator := service.NewBinanceCredentialValidator(initialEnvironmentConfiguration.RESTBaseURL)
@@ -53,6 +54,7 @@ func main() {
 	credentialService.InitializeCredentials(context.Background())
 	activeEnvironment := credentialService.GetActiveEnvironmentConfiguration()
 	binancePriceService.UpdateEnvironmentConfiguration(activeEnvironment)
+	binanceHistoricalPriceService.UpdateEnvironmentConfiguration(activeEnvironment)
 	binanceSymbolService := service.NewBinanceSymbolService(activeEnvironment)
 	binanceTradingService := service.NewBinanceTradingService(activeEnvironment)
 	dailyPurchaseAutomationService := service.NewDailyPurchaseAutomationService(dailyPurchaseSettingsService, binancePriceService, binanceTradingService, tradingOperationService, tradingScheduleService)
@@ -78,7 +80,7 @@ func main() {
 		TargetProfitPercent:          applicationConfiguration.TargetProfitPercent,
 	}
 
-	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, dailyPurchaseSettingsService, credentialService, binanceSymbolService, binancePriceService, binanceTradingService, tradingScheduleService, dashboardSettingsSummary, parsedTemplates)
+	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, dailyPurchaseSettingsService, credentialService, binanceSymbolService, binancePriceService, binanceHistoricalPriceService, binanceTradingService, tradingScheduleService, dashboardSettingsSummary, parsedTemplates)
 	router := server.RegisterRoutes()
 
 	applicationContext, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
