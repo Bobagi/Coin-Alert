@@ -506,10 +506,20 @@
 
     function resolveDashboardApiBaseUrl() {
         const trimmedBaseUrl = dashboardApiBaseUrl.trim();
-        if (trimmedBaseUrl) {
-            return trimmedBaseUrl.replace(/\/$/, '');
+        if (!trimmedBaseUrl) {
+            return window.location.origin;
         }
-        return window.location.origin;
+        const normalizedBaseUrl = trimmedBaseUrl.replace(/\/$/, '');
+        const windowOrigin = window.location.origin;
+        try {
+            const parsedConfiguredUrl = new URL(normalizedBaseUrl);
+            if (parsedConfiguredUrl.origin === windowOrigin) {
+                return normalizedBaseUrl;
+            }
+        } catch (parseError) {
+            console.warn('Could not parse ApplicationBaseURL, falling back to window origin.', parseError);
+        }
+        return windowOrigin;
     }
 
     function buildDashboardApiUrl(relativePath) {
