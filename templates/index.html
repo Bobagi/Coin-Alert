@@ -36,6 +36,10 @@
         .dropdown-item { padding: 10px 12px; cursor: pointer; }
         .dropdown-item:hover { background: #111827; }
         .dropdown-item.active { background: rgba(99,102,241,0.2); }
+        .current-price-panel { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 8px 10px; border-radius: 12px; background: rgba(15,23,42,0.8); border: 1px solid #334155; box-shadow: 0 6px 16px rgba(0,0,0,0.25); }
+        .current-price-label { font-weight: 700; color: #e2e8f0; }
+        button.current-price-reload { width: auto; padding: 6px 10px; border-radius: 999px; font-size: 0.85em; background: linear-gradient(120deg, #38bdf8, #6366f1); }
+        button.current-price-reload:disabled { opacity: 0.6; cursor: not-allowed; }
         .loading-indicator { display: inline-flex; align-items: center; gap: 8px; color: #94a3b8; font-size: 0.9em; }
         .loading-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
@@ -115,7 +119,10 @@
                         </template>
                     </div>
                     <div class="muted" x-show="isPriceLoading">Loading current price...</div>
-                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
+                    <div class="current-price-panel" x-show="currentPriceText">
+                        <button type="button" class="current-price-reload" x-on:click.prevent="refreshCurrentPrice()" x-bind:disabled="isPriceLoading || !query.trim()" title="Reload current price">Reload</button>
+                        <div class="current-price-label" x-text="currentPriceText"></div>
+                    </div>
                     <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
                 </div>
                 <label for="capital_threshold">Capital threshold</label>
@@ -145,7 +152,10 @@
                         </template>
                     </div>
                     <div class="muted" x-show="isPriceLoading">Loading current price...</div>
-                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
+                    <div class="current-price-panel" x-show="currentPriceText">
+                        <button type="button" class="current-price-reload" x-on:click.prevent="refreshCurrentPrice()" x-bind:disabled="isPriceLoading || !query.trim()" title="Reload current price">Reload</button>
+                        <div class="current-price-label" x-text="currentPriceText"></div>
+                    </div>
                     <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
                 </div>
                 <label for="daily_purchase_amount">Daily amount</label>
@@ -173,7 +183,10 @@
                         </template>
                     </div>
                     <div class="muted" x-show="isPriceLoading">Loading current price...</div>
-                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
+                    <div class="current-price-panel" x-show="currentPriceText">
+                        <button type="button" class="current-price-reload" x-on:click.prevent="refreshCurrentPrice()" x-bind:disabled="isPriceLoading || !query.trim()" title="Reload current price">Reload</button>
+                        <div class="current-price-label" x-text="currentPriceText"></div>
+                    </div>
                     <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
                 </div>
                 <label for="alert_min_threshold">Minimum threshold</label>
@@ -511,9 +524,9 @@
                     }
                     const body = await response.json();
                     if (body.price) {
-                        this.currentPriceText = `Current price: ${Number(body.price).toFixed(6)}`;
+                        this.currentPriceText = `Current price for ${symbol}: ${Number(body.price).toFixed(6)}`;
                     } else {
-                        this.currentPriceText = 'Current price unavailable.';
+                        this.currentPriceText = `Current price for ${symbol} unavailable.`;
                     }
                 } catch (error) {
                     console.error('Could not fetch current price', error);
@@ -522,6 +535,14 @@
                 } finally {
                     this.isPriceLoading = false;
                 }
+            },
+            refreshCurrentPrice() {
+                const symbol = this.query.trim().toUpperCase();
+                if (!symbol) {
+                    return;
+                }
+                this.lastPriceSymbol = '';
+                this.updatePrice();
             }
         };
     }
