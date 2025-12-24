@@ -24,13 +24,14 @@ type Server struct {
 	CredentialService       *service.CredentialService
 	BinanceSymbolService    *service.BinanceSymbolService
 	BinancePriceService     *service.BinancePriceService
+	BinanceHistoricalPriceService *service.BinanceHistoricalPriceService
 	BinanceTradingService   *service.BinanceTradingService
 	TradingScheduleService  *service.TradingScheduleService
 	SettingsSummary         DashboardSettingsSummary
 	Templates               *template.Template
 }
 
-func NewServer(tradingOperationService *service.TradingOperationService, emailAlertService *service.EmailAlertService, automationService *service.TradingAutomationService, dailyPurchaseService *service.DailyPurchaseSettingsService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, binancePriceService *service.BinancePriceService, binanceTradingService *service.BinanceTradingService, tradingScheduleService *service.TradingScheduleService, settingsSummary DashboardSettingsSummary, templates *template.Template) *Server {
+func NewServer(tradingOperationService *service.TradingOperationService, emailAlertService *service.EmailAlertService, automationService *service.TradingAutomationService, dailyPurchaseService *service.DailyPurchaseSettingsService, credentialService *service.CredentialService, binanceSymbolService *service.BinanceSymbolService, binancePriceService *service.BinancePriceService, binanceHistoricalPriceService *service.BinanceHistoricalPriceService, binanceTradingService *service.BinanceTradingService, tradingScheduleService *service.TradingScheduleService, settingsSummary DashboardSettingsSummary, templates *template.Template) *Server {
 	return &Server{
 		TradingOperationService: tradingOperationService,
 		EmailAlertService:       emailAlertService,
@@ -39,6 +40,7 @@ func NewServer(tradingOperationService *service.TradingOperationService, emailAl
 		CredentialService:       credentialService,
 		BinanceSymbolService:    binanceSymbolService,
 		BinancePriceService:     binancePriceService,
+		BinanceHistoricalPriceService: binanceHistoricalPriceService,
 		BinanceTradingService:   binanceTradingService,
 		TradingScheduleService:  tradingScheduleService,
 		SettingsSummary:         settingsSummary,
@@ -60,6 +62,7 @@ func (server *Server) RegisterRoutes() http.Handler {
 	router.HandleFunc("/settings/daily-purchase", server.handleUpdateDailyPurchaseSettings)
 	router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
 	router.HandleFunc("/binance/price", server.handleBinancePrice)
+	router.HandleFunc("/binance/history", server.handleBinanceHistoricalPrices)
 	router.HandleFunc("/operations/execute-next", server.handleExecuteNextOperation)
 	return router
 }
@@ -491,6 +494,45 @@ func (server *Server) handleBinancePrice(responseWriter http.ResponseWriter, req
 	}
 }
 
+func (server *Server) handleBinanceHistoricalPrices(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	tradingPairSymbol := request.URL.Query().Get("symbol")
+	if tradingPairSymbol == "" {
+		http.Error(responseWriter, "Missing symbol parameter", http.StatusBadRequest)
+		return
+	}
+
+	periodValue := request.URL.Query().Get("period")
+	if periodValue == "" {
+		periodValue = string(service.BinanceHistoricalPricePeriodOneYear)
+	}
+
+	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+
+	historicalPoints, normalizedPeriod, historyError := server.BinanceHistoricalPriceService.GetHistoricalPrices(contextWithTimeout, tradingPairSymbol, periodValue)
+	if historyError != nil {
+		log.Printf("Could not fetch Binance history for %s: %v", tradingPairSymbol, historyError)
+		http.Error(responseWriter, "Could not fetch historical prices", http.StatusBadGateway)
+		return
+	}
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	encodeError := json.NewEncoder(responseWriter).Encode(BinanceHistoricalPriceResponse{
+		Symbol: tradingPairSymbol,
+		Period: string(normalizedPeriod),
+		Points: historicalPoints,
+	})
+	if encodeError != nil {
+		log.Printf("Could not encode history: %v", encodeError)
+		http.Error(responseWriter, "Failed to serialize historical prices", http.StatusInternalServerError)
+	}
+}
+
 func (server *Server) buildDashboardViewModelWithRequest(request *http.Request) (*DashboardViewModel, error) {
 	dashboardViewModel, loadError := server.buildDashboardViewModel(request.Context())
 	if loadError != nil {
@@ -807,8 +849,14 @@ type BinanceSymbolsResponse struct {
 }
 
 type BinancePriceResponse struct {
-        Symbol string  `json:"symbol"`
-        Price  float64 `json:"price"`
+	Symbol string  `json:"symbol"`
+	Price  float64 `json:"price"`
+}
+
+type BinanceHistoricalPriceResponse struct {
+	Symbol string                               `json:"symbol"`
+	Period string                               `json:"period"`
+	Points []service.BinanceHistoricalPricePoint `json:"points"`
 }
 
 func (server *Server) reconcileFilledSellOrders(requestContext context.Context) {
@@ -1001,6 +1049,7 @@ func (server *Server) refreshEnvironmentConfiguration() {
 	activeEnvironment := server.CredentialService.GetActiveEnvironmentConfiguration()
 	server.BinancePriceService.UpdateEnvironmentConfiguration(activeEnvironment)
 	server.BinanceSymbolService.UpdateEnvironmentConfiguration(activeEnvironment)
+	server.BinanceHistoricalPriceService.UpdateEnvironmentConfiguration(activeEnvironment)
 	server.BinanceTradingService.UpdateEnvironmentConfiguration(activeEnvironment)
 	server.SettingsSummary.BinanceAPIBaseURL = activeEnvironment.RESTBaseURL
 	server.SettingsSummary.ActiveBinanceEnvironment = activeEnvironment.EnvironmentName
