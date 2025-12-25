@@ -53,6 +53,7 @@ func main() {
 	credentialService.InitializeCredentials(context.Background())
 	activeEnvironment := credentialService.GetActiveEnvironmentConfiguration()
 	binancePriceService.UpdateEnvironmentConfiguration(activeEnvironment)
+	binanceHistoricalPriceService := service.NewBinanceHistoricalPriceService(activeEnvironment)
 	binanceSymbolService := service.NewBinanceSymbolService(activeEnvironment)
 	binanceTradingService := service.NewBinanceTradingService(activeEnvironment)
 	dailyPurchaseAutomationService := service.NewDailyPurchaseAutomationService(dailyPurchaseSettingsService, binancePriceService, binanceTradingService, tradingOperationService, tradingScheduleService)
@@ -78,7 +79,7 @@ func main() {
 		TargetProfitPercent:          applicationConfiguration.TargetProfitPercent,
 	}
 
-	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, dailyPurchaseSettingsService, credentialService, binanceSymbolService, binancePriceService, binanceTradingService, tradingScheduleService, dashboardSettingsSummary, parsedTemplates)
+	server := httpserver.NewServer(tradingOperationService, emailAlertService, automationService, dailyPurchaseSettingsService, credentialService, binanceSymbolService, binancePriceService, binanceHistoricalPriceService, binanceTradingService, tradingScheduleService, dashboardSettingsSummary, parsedTemplates)
 	router := server.RegisterRoutes()
 
 	applicationContext, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
