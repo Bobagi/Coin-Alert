@@ -51,9 +51,9 @@
         .chart-card-header h3 { margin: 0; }
         .chart-canvas-layout { display: flex; gap: 16px; align-items: stretch; }
         .chart-card canvas { width: 100%; background: #0b1220; border-radius: 12px; border: 1px solid #1f2937; }
-        .chart-axis-values { min-width: 160px; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; font-size: 0.95rem; }
+        .chart-axis-values { min-width: 180px; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 0; font-size: 1rem; }
         .chart-axis-values .axis-label { font-weight: 800; color: #e2e8f0; }
-        .chart-axis-values .axis-value { color: #38bdf8; font-weight: 800; font-size: 1rem; }
+        .chart-axis-values .axis-value { color: #38bdf8; font-weight: 800; font-size: 1.05rem; }
         .chart-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 12px; flex-wrap: wrap; }
         .chart-pill { padding: 6px 10px; border-radius: 999px; background: rgba(99,102,241,0.15); color: #a5b4fc; font-weight: 700; }
         @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
@@ -276,7 +276,7 @@
                         </div>
                     </div>
                     <div class="chart-canvas-layout">
-                        <canvas x-bind:id="chartCard.canvasIdentifier" width="640" height="260"></canvas>
+                    <canvas x-bind:id="chartCard.canvasIdentifier" width="640" height="300"></canvas>
                         <div class="chart-axis-values">
                             <div>
                                 <div class="axis-label">Y max</div>
@@ -554,6 +554,25 @@
             return pointTimestamp.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
         }
         return pointTimestamp.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+    }
+
+    function calculateMinAndMaxPrices(pricePoints) {
+        if (!pricePoints || !pricePoints.length) {
+            return { minimumPrice: 0, maximumPrice: 0 };
+        }
+        let minimumPrice = Number.POSITIVE_INFINITY;
+        let maximumPrice = Number.NEGATIVE_INFINITY;
+        pricePoints.forEach(point => {
+            if (!Number.isFinite(point.price)) {
+                return;
+            }
+            minimumPrice = Math.min(minimumPrice, point.price);
+            maximumPrice = Math.max(maximumPrice, point.price);
+        });
+        if (!Number.isFinite(minimumPrice) || !Number.isFinite(maximumPrice)) {
+            return { minimumPrice: 0, maximumPrice: 0 };
+        }
+        return { minimumPrice, maximumPrice };
     }
 
     function createChartIdentifier() {
@@ -855,8 +874,11 @@
                         price: Number(point.price),
                     }));
                     chartCard.pricePoints = parsedPoints.slice(-this.chartWindowSize);
-                    chartCard.minimumPrice = Number.isFinite(Number(body.minimumPrice)) ? Number(body.minimumPrice) : 0;
-                    chartCard.maximumPrice = Number.isFinite(Number(body.maximumPrice)) ? Number(body.maximumPrice) : 0;
+                    const serverMinimumPrice = Number.isFinite(Number(body.minimumPrice)) ? Number(body.minimumPrice) : 0;
+                    const serverMaximumPrice = Number.isFinite(Number(body.maximumPrice)) ? Number(body.maximumPrice) : 0;
+                    const computedRange = calculateMinAndMaxPrices(parsedPoints);
+                    chartCard.minimumPrice = serverMinimumPrice > 0 ? serverMinimumPrice : computedRange.minimumPrice;
+                    chartCard.maximumPrice = serverMaximumPrice > 0 ? serverMaximumPrice : computedRange.maximumPrice;
                     chartCard.rangeLabel = buildRangeLabel(chartCard.tradingPairSymbol, chartCard.minimumPrice, chartCard.maximumPrice);
                     chartCard.minimumPriceLabel = buildAxisValueLabel(chartCard.tradingPairSymbol, 'Min', chartCard.minimumPrice);
                     chartCard.maximumPriceLabel = buildAxisValueLabel(chartCard.tradingPairSymbol, 'Max', chartCard.maximumPrice);
@@ -983,9 +1005,9 @@
                 const maximumPrice = chartCard.maximumPrice === minimumPrice ? minimumPrice + 1 : chartCard.maximumPrice;
 
                 const xAxisDivisions = 4;
-                context.strokeStyle = 'rgba(148, 163, 184, 0.25)';
-                context.lineWidth = 1;
-                context.font = '13px Segoe UI';
+                context.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+                context.lineWidth = 1.2;
+                context.font = '14px Segoe UI';
                 context.fillStyle = '#94a3b8';
                 for (let divisionIndex = 0; divisionIndex <= xAxisDivisions; divisionIndex += 1) {
                     const divisionX = padding + (usableWidth * divisionIndex) / xAxisDivisions;
@@ -997,7 +1019,7 @@
                     const point = points[pointIndex];
                     const label = buildXAxisLabelForPoint(point.timestamp, chartCard.selectedPeriod);
                     if (label) {
-                        context.fillText(label, divisionX - 22, height - 6);
+                        context.fillText(label, divisionX - 26, height - 6);
                     }
                 }
 
@@ -1036,7 +1058,7 @@
                 const quoteAsset = determineQuoteAssetFromSymbol(chartCard.tradingPairSymbol);
                 const currentValueLabel = formatPriceForQuoteAsset(latestPoint.price, quoteAsset);
                 context.fillStyle = '#22c55e';
-                context.font = '14px Segoe UI';
+                context.font = '15px Segoe UI';
                 context.fillText(currentValueLabel, width - rightPadding + 8, latestYPosition + 4);
 
                 context.fillStyle = '#22c55e';
@@ -1046,7 +1068,7 @@
 
                 if (chartCard.isHoveringCurrentPoint && chartCard.hoveredPriceLabel) {
                     const tooltipPadding = 6;
-                    context.font = '14px Segoe UI';
+                    context.font = '15px Segoe UI';
                     const tooltipText = chartCard.hoveredPriceLabel;
                     const textWidth = context.measureText(tooltipText).width;
                     const tooltipWidth = textWidth + tooltipPadding * 2;
