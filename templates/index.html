@@ -39,6 +39,19 @@
         .loading-indicator { display: inline-flex; align-items: center; gap: 8px; color: #94a3b8; font-size: 0.9em; }
         .loading-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
+
+        .price-header { display:flex; align-items:center; gap:8px; margin-top:8px; }
+        .price-label { color:#f8fafc; font-weight:800; font-size:1.02rem; }
+        .price-value { color:#22d3ee; font-weight:700; }
+        .reload-button { width:auto; padding:6px 10px; border-radius:8px; background:linear-gradient(120deg,#0891b2,#0e7490); font-size:0.85rem; }
+        .charts-stack { display:flex; flex-direction:column; gap:16px; margin-top:20px; }
+        .chart-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+        .chart-box { position:relative; height:280px; border:1px solid #1f2937; border-radius:10px; padding:8px; background:#0b1220; }
+        .chart-svg { width:100%; height:100%; display:block; }
+        .chart-tooltip { position:absolute; background:#111827; border:1px solid #334155; border-radius:8px; padding:8px; font-size:0.8rem; pointer-events:none; z-index:3; white-space:nowrap; }
+        .axis-tag { font-weight:700; color:#cbd5e1; font-size:0.85rem; }
+        .axis-tag strong { color:#f8fafc; }
+        .floating-price-label { fill:#22d3ee; font-size:11px; font-weight:700; }
     </style>
 </head>
 <body x-data="dashboard({{if .IsBinanceConfigured}}true{{else}}false{{end}})" x-init="initDashboard()">
@@ -114,8 +127,12 @@
                             <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
+                    <div class="price-header" x-show="currentPriceText || isPriceLoading">
+                        <span class="price-label">Current price:</span>
+                        <span class="price-value" x-show="currentPriceText" x-text="currentPriceText"></span>
+                        <button type="button" class="reload-button" x-on:click.prevent="reloadPrice()" x-bind:disabled="isPriceLoading">↻</button>
+                    </div>
                     <div class="muted" x-show="isPriceLoading">Loading current price...</div>
-                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
                     <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
                 </div>
                 <label for="capital_threshold">Capital threshold</label>
@@ -144,8 +161,12 @@
                             <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
+                    <div class="price-header" x-show="currentPriceText || isPriceLoading">
+                        <span class="price-label">Current price:</span>
+                        <span class="price-value" x-show="currentPriceText" x-text="currentPriceText"></span>
+                        <button type="button" class="reload-button" x-on:click.prevent="reloadPrice()" x-bind:disabled="isPriceLoading">↻</button>
+                    </div>
                     <div class="muted" x-show="isPriceLoading">Loading current price...</div>
-                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
                     <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
                 </div>
                 <label for="daily_purchase_amount">Daily amount</label>
@@ -172,8 +193,12 @@
                             <div class="dropdown-item" :class="{ 'active': highlightedIndex === index }" x-text="symbol" x-on:mouseenter="highlightedIndex = index" x-on:mousedown.prevent="select(symbol)"></div>
                         </template>
                     </div>
+                    <div class="price-header" x-show="currentPriceText || isPriceLoading">
+                        <span class="price-label">Current price:</span>
+                        <span class="price-value" x-show="currentPriceText" x-text="currentPriceText"></span>
+                        <button type="button" class="reload-button" x-on:click.prevent="reloadPrice()" x-bind:disabled="isPriceLoading">↻</button>
+                    </div>
                     <div class="muted" x-show="isPriceLoading">Loading current price...</div>
-                    <div class="muted" x-show="currentPriceText" x-text="currentPriceText"></div>
                     <div class="muted" style="color:#ef4444;" x-show="priceErrorMessage" x-text="priceErrorMessage"></div>
                 </div>
                 <label for="alert_min_threshold">Minimum threshold</label>
@@ -377,8 +402,117 @@
             {{end}}
         </div>
     </div>
+
+    <div class="charts-stack" x-data="chartDashboard()" x-init="init()">
+        <div class="card" style="width:100%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                <h2 style="margin:0;">Real-time crypto charts</h2>
+                <button type="button" style="width:auto; min-width:52px;" x-on:click="openModal()">+</button>
+            </div>
+        </div>
+
+        <template x-for="chart in charts" :key="chart.id">
+            <div class="card" x-data="chartCard(chart, (id) => removeChartById(id))" x-init="init()">
+                <div class="chart-header">
+                    <div>
+                        <h2 style="margin:0;" x-text="chart.symbol"></h2>
+                        <div class="muted">Updates every 5 seconds</div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <select style="margin:0; width:auto;" x-model="period" x-on:change="changePeriod()">
+                            <option value="1Y">1Y</option>
+                            <option value="3M">3M</option>
+                            <option value="1M">1M</option>
+                            <option value="1W">1W</option>
+                            <option value="1D">1D</option>
+                        </select>
+                        <button type="button" class="secondary" style="width:auto;" x-on:click="remove()">Remove</button>
+                    </div>
+                </div>
+                <div class="row" style="margin-bottom:8px;">
+                    <div class="axis-tag">Y Max: <strong x-text="formatPrice(yMax, quote)"></strong></div>
+                    <div class="axis-tag">Y Min: <strong x-text="formatPrice(yMin, quote)"></strong></div>
+                </div>
+                <div class="chart-box" x-ref="chartBox" x-on:mousemove="trackMouse($event)" x-on:mouseleave="hideTooltip()">
+                    <svg class="chart-svg" viewBox="0 0 900 260" preserveAspectRatio="none">
+                        <g>
+                            <template x-for="tick in xTicks" :key="tick.key">
+                                <g>
+                                    <line :x1="tick.x" :x2="tick.x" y1="12" y2="228" stroke="#1f2937" stroke-width="1"></line>
+                                    <text :x="tick.x" y="246" text-anchor="middle" fill="#94a3b8" font-size="11" x-text="tick.label"></text>
+                                </g>
+                            </template>
+                            <polyline :points="linePoints" fill="none" stroke="#60a5fa" stroke-width="2"></polyline>
+                            <line x1="40" x2="860" :y1="currentY" :y2="currentY" stroke="#22d3ee" stroke-dasharray="4 4" stroke-width="1.5"></line>
+                            <circle :cx="currentX" :cy="currentY" r="4.8" fill="#22d3ee"></circle>
+                            <rect :x="Math.min(currentX + 8, 740)" :y="Math.max(currentY - 16, 12)" width="120" height="20" fill="#0f172a" stroke="#22d3ee" rx="4"></rect>
+                            <text class="floating-price-label" :x="Math.min(currentX + 12, 744)" :y="Math.max(currentY - 2, 26)" x-text="formatPrice(currentPrice, quote)"></text>
+                        </g>
+                    </svg>
+                    <div class="chart-tooltip" x-show="tooltip.visible" :style="`left:${tooltip.left}px; top:${tooltip.top}px;`">
+                        <div x-text="formatPrice(currentPrice, quote)"></div>
+                        <div x-text="quote"></div>
+                        <div x-text="formatTooltipTime(currentTimestamp)"></div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <div x-show="isModalOpen" style="position:fixed; inset:0; background:rgba(2,6,23,0.7); display:flex; align-items:center; justify-content:center; z-index:40;">
+            <div class="card" style="width:min(620px, 90vw);">
+                <h2>Add chart</h2>
+                <div class="dropdown">
+                    <input x-model="modalQuery" x-on:input="filterModalSymbols()" x-on:keydown.arrow-down.prevent="highlightNextModal()" x-on:keydown.arrow-up.prevent="highlightPreviousModal()" x-on:keydown.enter.prevent="selectModalHighlighted()" placeholder="Type a symbol (e.g. BTCUSDT)">
+                    <div class="dropdown-list" x-show="modalFilteredSymbols.length">
+                        <template x-for="(symbol, index) in modalFilteredSymbols" :key="symbol">
+                            <div class="dropdown-item" :class="{ 'active': modalHighlightedIndex === index }" x-text="symbol" x-on:mousedown.prevent="selectModalSymbol(symbol)"></div>
+                        </template>
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+                    <button type="button" class="secondary" style="width:auto;" x-on:click="closeModal()">Cancel</button>
+                    <button type="button" style="width:auto;" x-on:click="confirmModalSelection()">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 <script>
+
+    const knownQuoteAssets = ['USDT', 'BUSD', 'USDC', 'FDUSD', 'TUSD', 'BNB', 'BTC', 'ETH', 'BRL', 'EUR', 'TRY', 'BIDR', 'AUD', 'RUB', 'DAI', 'PAX', 'GBP'];
+
+    function detectQuoteCurrency(symbol) {
+        const upperSymbol = (symbol || '').toUpperCase();
+        for (const asset of knownQuoteAssets.sort((left, right) => right.length - left.length)) {
+            if (upperSymbol.endsWith(asset)) {
+                return asset;
+            }
+        }
+        return upperSymbol.length > 3 ? upperSymbol.slice(-4) : upperSymbol;
+    }
+
+    function formatPriceByQuote(price, quoteCurrency) {
+        if (!Number.isFinite(price)) {
+            return 'Unavailable';
+        }
+        if (quoteCurrency === 'BRL') {
+            return `${price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (BRL)`;
+        }
+        const baseDecimals = price >= 1000 ? 2 : price >= 1 ? 4 : 6;
+        return `${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: baseDecimals })} ${quoteCurrency}`;
+    }
+
+    function formatTimestampByPeriod(timestamp, period) {
+        const date = new Date(timestamp);
+        if (period === '1D') {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        }
+        if (period === '1W' || period === '1M') {
+            return date.toLocaleDateString([], { month: '2-digit', day: '2-digit' });
+        }
+        return date.toLocaleDateString([], { month: 'short', year: '2-digit' });
+    }
+
     function dashboard(initialValidationStatus) {
         return {
             initialValidationStatus,
@@ -441,15 +575,14 @@
             currentPriceText: '',
             priceErrorMessage: '',
             isPriceLoading: false,
-            lastPriceSymbol: '',
-            initPriceLookup() {
+            async initPriceLookup() {
                 if (this.query) {
-                    this.updatePrice();
+                    await this.updatePrice(true);
                 }
             },
             handleInputChange() {
                 this.filter();
-                this.updatePrice();
+                this.updatePrice(true);
             },
             filter() {
                 const search = this.query.toUpperCase();
@@ -459,59 +592,50 @@
                     this.highlightedIndex = this.filteredSymbols.length ? 0 : -1;
                     return;
                 }
-                this.filteredSymbols = availableSymbols
-                    .filter(symbol => symbol.includes(search))
-                    .slice(0, 20);
+                this.filteredSymbols = availableSymbols.filter(symbol => symbol.includes(search)).slice(0, 20);
                 this.highlightedIndex = this.filteredSymbols.length ? 0 : -1;
             },
             select(symbol) {
                 this.query = symbol;
                 this.filteredSymbols = [];
                 this.highlightedIndex = -1;
-                this.updatePrice();
+                this.updatePrice(true);
             },
             highlightNext() {
-                if (!this.filteredSymbols.length) {
-                    return;
-                }
+                if (!this.filteredSymbols.length) return;
                 this.highlightedIndex = (this.highlightedIndex + 1) % this.filteredSymbols.length;
             },
             highlightPrevious() {
-                if (!this.filteredSymbols.length) {
-                    return;
-                }
+                if (!this.filteredSymbols.length) return;
                 this.highlightedIndex = (this.highlightedIndex - 1 + this.filteredSymbols.length) % this.filteredSymbols.length;
             },
             selectHighlighted() {
-                if (this.highlightedIndex < 0 || this.highlightedIndex >= this.filteredSymbols.length) {
-                    return;
-                }
+                if (this.highlightedIndex < 0 || this.highlightedIndex >= this.filteredSymbols.length) return;
                 this.select(this.filteredSymbols[this.highlightedIndex]);
             },
-            async updatePrice() {
+            reloadPrice() {
+                this.updatePrice(true);
+            },
+            async updatePrice(forceReload) {
                 const symbol = this.query.trim().toUpperCase();
                 if (!symbol) {
                     this.currentPriceText = '';
                     this.priceErrorMessage = '';
-                    this.lastPriceSymbol = '';
                     return;
                 }
-                if (symbol === this.lastPriceSymbol) {
-                    return;
-                }
-                this.lastPriceSymbol = symbol;
                 this.isPriceLoading = true;
                 this.priceErrorMessage = '';
                 try {
-                    const response = await fetch(`/binance/price?symbol=${encodeURIComponent(symbol)}`);
+                    const response = await fetch(`/binance/price?symbol=${encodeURIComponent(symbol)}${forceReload ? `&t=${Date.now()}` : ''}`);
                     if (!response.ok) {
                         this.priceErrorMessage = 'Could not fetch current price.';
                         this.currentPriceText = '';
                         return;
                     }
                     const body = await response.json();
-                    if (body.price) {
-                        this.currentPriceText = `Current price: ${Number(body.price).toFixed(6)}`;
+                    if (typeof body.price === 'number') {
+                        const quote = detectQuoteCurrency(symbol);
+                        this.currentPriceText = formatPriceByQuote(body.price, quote);
                     } else {
                         this.currentPriceText = 'Current price unavailable.';
                     }
@@ -522,6 +646,197 @@
                 } finally {
                     this.isPriceLoading = false;
                 }
+            }
+        };
+    }
+
+    function chartDashboard() {
+        return {
+            charts: [],
+            nextChartId: 1,
+            isModalOpen: false,
+            modalQuery: '',
+            modalFilteredSymbols: [],
+            modalHighlightedIndex: -1,
+            init() {},
+            openModal() {
+                this.isModalOpen = true;
+                this.modalQuery = '';
+                this.filterModalSymbols();
+            },
+            closeModal() {
+                this.isModalOpen = false;
+            },
+            filterModalSymbols() {
+                const symbols = Alpine.store('symbolStore').symbols || [];
+                const q = this.modalQuery.trim().toUpperCase();
+                this.modalFilteredSymbols = symbols.filter(symbol => symbol.includes(q)).slice(0, 30);
+                this.modalHighlightedIndex = this.modalFilteredSymbols.length ? 0 : -1;
+            },
+            highlightNextModal() {
+                if (!this.modalFilteredSymbols.length) return;
+                this.modalHighlightedIndex = (this.modalHighlightedIndex + 1) % this.modalFilteredSymbols.length;
+            },
+            highlightPreviousModal() {
+                if (!this.modalFilteredSymbols.length) return;
+                this.modalHighlightedIndex = (this.modalHighlightedIndex - 1 + this.modalFilteredSymbols.length) % this.modalFilteredSymbols.length;
+            },
+            selectModalHighlighted() {
+                if (this.modalHighlightedIndex < 0 || this.modalHighlightedIndex >= this.modalFilteredSymbols.length) return;
+                this.selectModalSymbol(this.modalFilteredSymbols[this.modalHighlightedIndex]);
+            },
+            selectModalSymbol(symbol) {
+                this.modalQuery = symbol;
+                this.modalFilteredSymbols = [];
+            },
+            confirmModalSelection() {
+                const symbol = this.modalQuery.trim().toUpperCase();
+                if (!symbol) return;
+                this.charts.push({ id: this.nextChartId++, symbol });
+                this.closeModal();
+            },
+            removeChartById(id) {
+                this.charts = this.charts.filter(chart => chart.id !== id);
+            }
+        };
+    }
+
+    function chartCard(chart, removeChartById) {
+        const maxPoints = 80;
+        return {
+            period: '1Y',
+            quote: detectQuoteCurrency(chart.symbol),
+            points: [],
+            yMin: 0,
+            yMax: 0,
+            currentPrice: 0,
+            currentTimestamp: 0,
+            poller: null,
+            tooltip: { visible: false, left: 0, top: 0 },
+            async init() {
+                await this.loadHistory();
+                this.startPolling();
+            },
+            async loadHistory() {
+                const response = await fetch(`/binance/klines?symbol=${encodeURIComponent(chart.symbol)}&period=${this.period}`);
+                if (!response.ok) return;
+                const body = await response.json();
+                const parsedPoints = (body.points || []).map(point => ({ timestamp: point.CloseTime, price: point.ClosePrice }));
+                this.points = parsedPoints.slice(-maxPoints);
+                this.recalculateAxis();
+                const lastPoint = this.points[this.points.length - 1];
+                if (lastPoint) {
+                    this.currentPrice = lastPoint.price;
+                    this.currentTimestamp = lastPoint.timestamp;
+                }
+            },
+            startPolling() {
+                if (this.poller) {
+                    clearInterval(this.poller);
+                }
+                this.poller = setInterval(() => this.fetchCurrentPoint(), 5000);
+            },
+            async fetchCurrentPoint() {
+                const response = await fetch(`/binance/price?symbol=${encodeURIComponent(chart.symbol)}&t=${Date.now()}`);
+                if (!response.ok) return;
+                const body = await response.json();
+                const price = Number(body.price);
+                if (!Number.isFinite(price)) return;
+                const timestamp = Date.now();
+                this.points = [...this.points, { timestamp, price }].slice(-maxPoints);
+                this.currentPrice = price;
+                this.currentTimestamp = timestamp;
+                if (price > this.yMax) this.yMax = price;
+                if (price < this.yMin) this.yMin = price;
+            },
+            recalculateAxis() {
+                if (!this.points.length) {
+                    this.yMin = 0;
+                    this.yMax = 1;
+                    return;
+                }
+                this.yMin = Math.min(...this.points.map(point => point.price));
+                this.yMax = Math.max(...this.points.map(point => point.price));
+                if (this.yMax === this.yMin) {
+                    this.yMax += 1;
+                }
+            },
+            changePeriod() {
+                this.loadHistory();
+            },
+            remove() {
+                if (this.poller) {
+                    clearInterval(this.poller);
+                }
+                removeChartById(chart.id);
+            },
+            hideTooltip() {
+                this.tooltip.visible = false;
+            },
+            trackMouse(event) {
+                const rect = this.$refs.chartBox.getBoundingClientRect();
+                const dx = Math.abs((event.clientX - rect.left) - this.currentXPixel(rect.width));
+                const dy = Math.abs((event.clientY - rect.top) - this.currentYPixel(rect.height));
+                if (dx <= 14 && dy <= 14) {
+                    this.tooltip.visible = true;
+                    this.tooltip.left = Math.min(event.clientX - rect.left + 12, rect.width - 160);
+                    this.tooltip.top = Math.max(event.clientY - rect.top - 50, 10);
+                } else {
+                    this.tooltip.visible = false;
+                }
+            },
+            formatPrice(value, quoteCurrency) {
+                return formatPriceByQuote(value, quoteCurrency);
+            },
+            formatTooltipTime(timestamp) {
+                return new Date(timestamp).toLocaleString();
+            },
+            currentXPixel(width) {
+                return (this.currentX / 900) * width;
+            },
+            currentYPixel(height) {
+                return (this.currentY / 260) * height;
+            },
+            get linePoints() {
+                if (!this.points.length) return '';
+                const minX = 40;
+                const maxX = 860;
+                const minY = 12;
+                const maxY = 228;
+                const span = this.points.length > 1 ? this.points.length - 1 : 1;
+                return this.points.map((point, index) => {
+                    const x = minX + ((maxX - minX) * index / span);
+                    const y = maxY - (((point.price - this.yMin) / (this.yMax - this.yMin || 1)) * (maxY - minY));
+                    return `${x},${y}`;
+                }).join(' ');
+            },
+            get currentX() {
+                const minX = 40;
+                const maxX = 860;
+                const span = this.points.length > 1 ? this.points.length - 1 : 1;
+                return minX + ((maxX - minX) * span / span);
+            },
+            get currentY() {
+                const minY = 12;
+                const maxY = 228;
+                return maxY - (((this.currentPrice - this.yMin) / (this.yMax - this.yMin || 1)) * (maxY - minY));
+            },
+            get xTicks() {
+                if (!this.points.length) return [];
+                const tickCount = 6;
+                const minX = 40;
+                const maxX = 860;
+                const span = this.points.length - 1;
+                if (span <= 0) {
+                    return [{ key: 0, x: minX, label: formatTimestampByPeriod(this.points[0].timestamp, this.period) }];
+                }
+                const ticks = [];
+                for (let i = 0; i < tickCount; i++) {
+                    const idx = Math.round((span * i) / (tickCount - 1));
+                    const x = minX + ((maxX - minX) * idx / span);
+                    ticks.push({ key: `${idx}-${i}`, x, label: formatTimestampByPeriod(this.points[idx].timestamp, this.period) });
+                }
+                return ticks;
             }
         };
     }
