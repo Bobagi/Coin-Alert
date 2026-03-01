@@ -60,6 +60,7 @@ func (server *Server) RegisterRoutes() http.Handler {
 	router.HandleFunc("/settings/daily-purchase", server.handleUpdateDailyPurchaseSettings)
 	router.HandleFunc("/binance/symbols", server.handleBinanceSymbols)
 	router.HandleFunc("/binance/price", server.handleBinancePrice)
+	router.HandleFunc("/binance/klines", server.handleBinanceKlines)
 	router.HandleFunc("/operations/execute-next", server.handleExecuteNextOperation)
 	return router
 }
@@ -491,6 +492,52 @@ func (server *Server) handleBinancePrice(responseWriter http.ResponseWriter, req
 	}
 }
 
+func (server *Server) handleBinanceKlines(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	tradingPairSymbol := request.URL.Query().Get("symbol")
+	if tradingPairSymbol == "" {
+		http.Error(responseWriter, "Missing symbol parameter", http.StatusBadRequest)
+		return
+	}
+
+	interval := request.URL.Query().Get("interval")
+	if interval == "" {
+		interval = "1d"
+	}
+
+	limit := 120
+	limitText := request.URL.Query().Get("limit")
+	if limitText != "" {
+		parsedLimit, parseError := strconv.Atoi(limitText)
+		if parseError != nil || parsedLimit <= 0 {
+			http.Error(responseWriter, "Invalid limit parameter", http.StatusBadRequest)
+			return
+		}
+		limit = parsedLimit
+	}
+
+	contextWithTimeout, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+
+	klines, klinesError := server.BinancePriceService.GetKlines(contextWithTimeout, tradingPairSymbol, interval, limit)
+	if klinesError != nil {
+		log.Printf("Could not fetch Binance klines for %s: %v", tradingPairSymbol, klinesError)
+		http.Error(responseWriter, "Could not fetch klines", http.StatusBadGateway)
+		return
+	}
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	encodeError := json.NewEncoder(responseWriter).Encode(BinanceKlinesResponse{Symbol: tradingPairSymbol, Klines: klines})
+	if encodeError != nil {
+		log.Printf("Could not encode klines: %v", encodeError)
+		http.Error(responseWriter, "Failed to serialize klines", http.StatusInternalServerError)
+	}
+}
+
 func (server *Server) buildDashboardViewModelWithRequest(request *http.Request) (*DashboardViewModel, error) {
 	dashboardViewModel, loadError := server.buildDashboardViewModel(request.Context())
 	if loadError != nil {
@@ -807,8 +854,13 @@ type BinanceSymbolsResponse struct {
 }
 
 type BinancePriceResponse struct {
-        Symbol string  `json:"symbol"`
-        Price  float64 `json:"price"`
+	Symbol string  `json:"symbol"`
+	Price  float64 `json:"price"`
+}
+
+type BinanceKlinesResponse struct {
+	Symbol string                 `json:"symbol"`
+	Klines []service.BinanceKline `json:"klines"`
 }
 
 func (server *Server) reconcileFilledSellOrders(requestContext context.Context) {
