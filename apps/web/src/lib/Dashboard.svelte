@@ -2,6 +2,8 @@
   import { onMount } from 'svelte'
   import { api, type TradingSettings, type CredentialStatus, type Operation } from './api'
   import { currentUser } from './stores'
+  import { t } from './i18n'
+  import LanguageSwitcher from './LanguageSwitcher.svelte'
   import AllocationChart from './AllocationChart.svelte'
   import PortfolioPanel from './PortfolioPanel.svelte'
 
@@ -57,7 +59,7 @@
       await api.saveCredentials(credEnv, credKey, credSecret)
       credKey = ''
       credSecret = ''
-      credMsg = 'Validated and saved.'
+      credMsg = $t('binance.validatedSaved')
       credentials = await api.getCredentials()
     } catch (e) {
       credErr = (e as Error).message
@@ -72,7 +74,7 @@
     settingsMsg = ''
     try {
       settings = await api.saveSettings(settings)
-      settingsMsg = 'Settings saved.'
+      settingsMsg = $t('settings.saved')
     } catch (e) {
       settingsMsg = (e as Error).message
     } finally {
@@ -96,7 +98,11 @@
     tradeErr = ''
     try {
       const operation = await api.buy(tradeSymbol, tradeAmount, tradeTarget)
-      tradeMsg = `Bought ${fmt(operation.quantity)} ${operation.symbol} @ ${fmt(operation.purchase_price_per_unit)}.`
+      tradeMsg = $t('buy.bought', {
+        qty: fmt(operation.quantity),
+        symbol: operation.symbol,
+        price: fmt(operation.purchase_price_per_unit)
+      })
       operations = await api.getOperations()
     } catch (e) {
       tradeErr = (e as Error).message
@@ -120,52 +126,67 @@
 <header class="topbar">
   <div class="brand">Coin<span>Hub</span></div>
   <div class="spacer"></div>
+  <LanguageSwitcher />
   {#if credentials}
-    <span class="pill">Binance: {credentials.has_active_credential ? credentials.active_environment : 'not connected'}</span>
+    <span class="pill">{$t('header.binance')} {credentials.has_active_credential ? credentials.active_environment : $t('header.notConnected')}</span>
   {/if}
   <span class="muted">{$currentUser?.email}</span>
-  <button class="ghost" on:click={logout}>Sign out</button>
+  <button class="ghost" on:click={logout}>{$t('header.signOut')}</button>
 </header>
 
 <main class="container">
   {#if loadingError}<div class="card error">{loadingError}</div>{/if}
 
+  <details class="card start" open>
+    <summary><strong>{$t('start.title')}</strong></summary>
+    <p class="muted" style="margin-top:10px;">{$t('start.intro')}</p>
+    <ol>
+      <li>{$t('start.s1')}</li>
+      <li>{$t('start.s2')}</li>
+      <li>{$t('start.s3')}</li>
+      <li>{$t('start.s4')}</li>
+    </ol>
+  </details>
+
   <div class="grid">
     <section class="card">
-      <h2>Binance connection</h2>
+      <h2>{$t('binance.title')}</h2>
+      <p class="muted">{$t('binance.subtitle')}</p>
+      <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('binance.help')}</p></details>
       {#if credentials?.has_active_credential}
-        <div class="pill">Active: {credentials.active_environment} • key {credentials.masked_api_key}</div>
+        <div class="pill" style="margin-top:12px;">{$t('binance.activePrefix')}: {credentials.active_environment} • {credentials.masked_api_key}</div>
       {:else}
-        <p class="muted">Connect with trade-only keys (withdrawals disabled). New accounts start on Testnet.</p>
+        <p class="muted" style="margin-top:12px;">{$t('binance.connectHint')}</p>
       {/if}
-      <label>Environment</label>
+      <label>{$t('binance.environment')}</label>
       <select bind:value={credEnv}>
-        <option value="TESTNET">Testnet</option>
-        <option value="PRODUCTION">Production (real money)</option>
+        <option value="TESTNET">{$t('binance.testnet')}</option>
+        <option value="PRODUCTION">{$t('binance.production')}</option>
       </select>
-      <label>API key</label>
-      <input bind:value={credKey} placeholder="API key" />
-      <label>API secret</label>
-      <input type="password" bind:value={credSecret} placeholder="API secret" />
+      <label>{$t('binance.apiKey')}</label>
+      <input bind:value={credKey} placeholder={$t('binance.apiKey')} />
+      <label>{$t('binance.apiSecret')}</label>
+      <input type="password" bind:value={credSecret} placeholder={$t('binance.apiSecret')} />
       <button style="width:100%; margin-top:14px;" disabled={credBusy} on:click={saveCredentials}>
-        {credBusy ? 'Validating…' : 'Validate & save'}
+        {credBusy ? $t('binance.saving') : $t('binance.save')}
       </button>
       {#if credMsg}<p class="success">{credMsg}</p>{/if}
       {#if credErr}<p class="error">{credErr}</p>{/if}
     </section>
 
     <section class="card">
-      <h2>Buy</h2>
-      <p class="muted">Market buy plus a take-profit limit sell at your target.</p>
-      <label>Pair</label>
+      <h2>{$t('buy.title')}</h2>
+      <p class="muted">{$t('buy.subtitle')}</p>
+      <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('buy.help')}</p></details>
+      <label>{$t('buy.pair')}</label>
       <input bind:value={tradeSymbol} on:blur={checkPrice} placeholder="BTCUSDT" />
-      {#if tradePrice !== null}<div class="muted">Current price: {fmt(tradePrice)}</div>{/if}
-      <label>Amount (quote currency)</label>
+      {#if tradePrice !== null}<div class="muted">{$t('buy.currentPrice', { price: fmt(tradePrice) })}</div>{/if}
+      <label>{$t('buy.amount')}</label>
       <input type="number" bind:value={tradeAmount} min="0" step="0.01" />
-      <label>Target profit %</label>
+      <label>{$t('buy.target')}</label>
       <input type="number" bind:value={tradeTarget} min="0" step="0.01" />
       <button style="width:100%; margin-top:14px;" disabled={tradeBusy} on:click={buy}>
-        {tradeBusy ? 'Placing…' : 'Buy + set take-profit'}
+        {tradeBusy ? $t('buy.placing') : $t('buy.button')}
       </button>
       {#if tradeMsg}<p class="success">{tradeMsg}</p>{/if}
       {#if tradeErr}<p class="error">{tradeErr}</p>{/if}
@@ -173,63 +194,66 @@
 
     {#if settings}
       <section class="card">
-        <h2>Bot settings</h2>
-        <label>Default pair</label>
+        <h2>{$t('settings.title')}</h2>
+        <p class="muted">{$t('settings.subtitle')}</p>
+        <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('settings.help')}</p></details>
+        <label>{$t('settings.defaultPair')}</label>
         <input bind:value={settings.trading_pair_symbol} />
         <div class="two">
           <div>
-            <label>Capital per buy</label>
+            <label>{$t('settings.capital')}</label>
             <input type="number" bind:value={settings.capital_threshold} min="0" step="0.01" />
           </div>
           <div>
-            <label>Target profit %</label>
+            <label>{$t('settings.target')}</label>
             <input type="number" bind:value={settings.target_profit_percent} min="0" step="0.01" />
           </div>
         </div>
         <div class="two">
           <div>
-            <label>Stop-loss %</label>
-            <input type="number" bind:value={settings.stop_loss_percent} min="0" step="0.01" placeholder="none" />
+            <label>{$t('settings.stopLoss')}</label>
+            <input type="number" bind:value={settings.stop_loss_percent} min="0" step="0.01" placeholder={$t('settings.stopLossNone')} />
           </div>
           <div>
-            <label>Daily buy hour (UTC)</label>
+            <label>{$t('settings.dailyHour')}</label>
             <input type="number" bind:value={settings.daily_purchase_hour_utc} min="0" max="23" />
           </div>
         </div>
         <label class="row">
           <input type="checkbox" bind:checked={settings.live_trading_enabled} style="width:auto" />
-          Enable live (real-money) trading
+          {$t('settings.enableLive')}
         </label>
         <button style="width:100%; margin-top:14px;" disabled={settingsBusy} on:click={saveSettings}>
-          {settingsBusy ? 'Saving…' : 'Save settings'}
+          {settingsBusy ? $t('settings.saving') : $t('settings.save')}
         </button>
         {#if settingsMsg}<p class="muted">{settingsMsg}</p>{/if}
       </section>
     {/if}
 
     <section class="card">
-      <h2>Open allocation</h2>
+      <h2>{$t('alloc.title')}</h2>
+      <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('alloc.help')}</p></details>
       {#if operations.some((operation) => operation.status === 'OPEN')}
         <AllocationChart {operations} />
       {:else}
-        <p class="muted">No open positions yet.</p>
+        <p class="muted" style="margin-top:12px;">{$t('alloc.none')}</p>
       {/if}
     </section>
   </div>
 
   <section class="card" style="margin-top:18px;">
-    <h2>Operations</h2>
+    <h2>{$t('ops.title')}</h2>
     {#if operations.length === 0}
-      <p class="muted">No operations yet. Connect Binance and place your first buy.</p>
+      <p class="muted">{$t('ops.none')}</p>
     {:else}
       <div class="table">
         <div class="trow thead">
-          <div>Pair</div>
-          <div>Status</div>
-          <div>Qty</div>
-          <div>Buy price</div>
-          <div>Target</div>
-          <div>Purchased</div>
+          <div>{$t('ops.pair')}</div>
+          <div>{$t('ops.status')}</div>
+          <div>{$t('ops.qty')}</div>
+          <div>{$t('ops.buyPrice')}</div>
+          <div>{$t('ops.target')}</div>
+          <div>{$t('ops.purchased')}</div>
         </div>
         {#each operations as operation (operation.id)}
           <div class="trow">
@@ -249,11 +273,14 @@
 </main>
 
 <style>
-  .topbar { display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .topbar { display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .brand { font-weight: 800; font-size: 1.3em; }
   .brand span { color: var(--brand); }
   .spacer { flex: 1; }
   .container { max-width: 1200px; margin: 24px auto; padding: 0 18px; }
+  .start { margin-bottom: 18px; }
+  .start summary { cursor: pointer; font-size: 1.05em; }
+  .start ol { margin: 8px 0 0; padding-left: 20px; line-height: 1.7; color: var(--text); }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
   .two { display: flex; gap: 12px; }
   .two > div { flex: 1; }

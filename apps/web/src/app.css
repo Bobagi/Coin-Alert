@@ -1,15 +1,18 @@
 :root {
-  --bg: #0b1120;
-  --surface: #111827;
-  --surface-2: #0b1220;
-  --border: #1f2937;
-  --text: #e2e8f0;
-  --muted: #94a3b8;
-  --brand: #22d3ee;
-  --brand-2: #6366f1;
-  --green: #22c55e;
-  --red: #ef4444;
-  --amber: #fbbf24;
+  /* Bobagi brand palette: warm dark + gold (matches bobagi.space #FFD421 and rhyme's golds). */
+  --bg: #0b0a07;
+  --surface: #15130d;
+  --surface-2: #1d1a11;
+  --border: #2a2616;
+  --text: #fff9db;
+  --muted: #b8ad8a;
+  --brand: #ffd43b;
+  --brand-strong: #fab005;
+  --brand-soft: #fff3bf;
+  --on-brand: #1a1400;
+  --green: #2bd66a;
+  --red: #ff5a5f;
+  --amber: #fab005;
   color-scheme: dark;
 }
 
@@ -18,8 +21,7 @@
 body {
   margin: 0;
   font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
-  background: radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.15), transparent),
-    var(--bg);
+  background: radial-gradient(1100px 560px at 82% -12%, rgba(250, 176, 5, 0.16), transparent), var(--bg);
   color: var(--text);
   min-height: 100vh;
 }
@@ -36,7 +38,7 @@ a { color: var(--brand); }
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 20px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 label { display: block; margin: 12px 0 6px; font-weight: 600; font-size: 0.9em; }
@@ -45,23 +47,25 @@ input, select {
   width: 100%;
   padding: 10px 12px;
   border-radius: 9px;
-  border: 1px solid #334155;
+  border: 1px solid #3a3320;
   background: var(--surface-2);
   color: var(--text);
   font-size: 0.95em;
 }
+input::placeholder { color: #7c7355; }
+input:focus, select:focus { outline: none; border-color: var(--brand); }
 
 button {
-  background: linear-gradient(120deg, var(--brand), var(--brand-2));
+  background: linear-gradient(120deg, var(--brand), var(--brand-strong));
   border: none;
   padding: 11px 16px;
   border-radius: 10px;
-  color: white;
-  font-weight: 700;
+  color: var(--on-brand);
+  font-weight: 800;
   cursor: pointer;
 }
-button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
-button.danger { background: linear-gradient(120deg, #ef4444, #b91c1c); }
+button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); font-weight: 700; }
+button.danger { background: linear-gradient(120deg, #ff5a5f, #c92a2a); color: #fff; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .pill {
@@ -70,6 +74,35 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   background: var(--surface-2); border: 1px solid var(--border); font-size: 0.85em;
 }
 .badge { padding: 4px 10px; border-radius: 999px; font-weight: 700; font-size: 0.8em; }
-.badge.green { background: rgba(34, 197, 94, 0.15); color: var(--green); }
-.badge.red { background: rgba(239, 68, 68, 0.15); color: var(--red); }
-.badge.amber { background: rgba(251, 191, 36, 0.15); color: var(--amber); }
+.badge.green { background: rgba(43, 214, 106, 0.16); color: var(--green); }
+.badge.red { background: rgba(255, 90, 95, 0.16); color: var(--red); }
+.badge.amber { background: rgba(250, 176, 5, 0.18); color: var(--amber); }
+
+/* Collapsible "How it works" help blocks. */
+.help {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  padding: 0 12px;
+}
+.help > summary {
+  cursor: pointer;
+  padding: 10px 0;
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--brand);
+  list-style: none;
+}
+.help > summary::-webkit-details-marker { display: none; }
+.help > summary::before { content: '＋ '; }
+.help[open] > summary::before { content: '－ '; }
+.help p { margin: 0 0 12px; color: var(--muted); font-size: 0.88em; line-height: 1.55; }
+
+/* Language switcher. */
+.langswitch { display: inline-flex; gap: 4px; }
+.langswitch button {
+  padding: 4px 9px; font-size: 0.78em; font-weight: 700;
+  background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 8px;
+}
+.langswitch button.active { color: var(--on-brand); background: var(--brand); border-color: var(--brand); }

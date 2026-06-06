@@ -1,6 +1,8 @@
 <script lang="ts">
   import { api } from './api'
   import { currentUser } from './stores'
+  import { t } from './i18n'
+  import LanguageSwitcher from './LanguageSwitcher.svelte'
 
   let mode: 'login' | 'signup' = 'login'
   let email = ''
@@ -28,26 +30,29 @@
 
 <div class="wrap">
   <div class="card auth">
-    <div class="brand">Coin<span>Hub</span></div>
-    <p class="muted">Crypto trading automation and your B3 portfolio, in one place.</p>
+    <div class="top">
+      <div class="brand">Coin<span>Hub</span></div>
+      <LanguageSwitcher />
+    </div>
+    <p class="muted">{$t('login.tagline')}</p>
 
     <div class="tabs">
-      <button class="tab" class:active={mode === 'login'} on:click={() => (mode = 'login')}>Sign in</button>
-      <button class="tab" class:active={mode === 'signup'} on:click={() => (mode = 'signup')}>Create account</button>
+      <button class="tab" class:active={mode === 'login'} on:click={() => (mode = 'login')}>{$t('login.signIn')}</button>
+      <button class="tab" class:active={mode === 'signup'} on:click={() => (mode = 'signup')}>{$t('login.createAccount')}</button>
     </div>
 
     <form on:submit|preventDefault={submit}>
       {#if mode === 'signup'}
-        <label for="name">Name</label>
-        <input id="name" bind:value={displayName} placeholder="Your name" />
+        <label for="name">{$t('login.name')}</label>
+        <input id="name" bind:value={displayName} placeholder={$t('login.namePlaceholder')} />
       {/if}
-      <label for="email">Email</label>
+      <label for="email">{$t('login.email')}</label>
       <input id="email" type="email" bind:value={email} required placeholder="you@example.com" />
-      <label for="password">Password</label>
-      <input id="password" type="password" bind:value={password} required placeholder="At least 8 characters" />
+      <label for="password">{$t('login.password')}</label>
+      <input id="password" type="password" bind:value={password} required placeholder={$t('login.passwordPlaceholder')} />
       {#if error}<p class="error">{error}</p>{/if}
       <button type="submit" disabled={busy} style="width:100%; margin-top:16px;">
-        {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+        {busy ? $t('login.wait') : mode === 'login' ? $t('login.signIn') : $t('login.createAccount')}
       </button>
     </form>
   </div>
@@ -56,6 +61,7 @@
 <style>
   .wrap { display: grid; place-items: center; min-height: 100vh; padding: 20px; }
   .auth { width: 100%; max-width: 400px; }
+  .top { display: flex; justify-content: space-between; align-items: center; }
   .brand { font-size: 1.9em; font-weight: 800; }
   .brand span { color: var(--brand); }
   .tabs { display: flex; gap: 8px; margin: 18px 0; }

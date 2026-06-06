@@ -7,7 +7,7 @@
 
   Chart.register(DoughnutController, ArcElement, Tooltip, Legend)
 
-  const palette = ['#22d3ee', '#6366f1', '#22c55e', '#fbbf24', '#ef4444', '#a855f7', '#14b8a6']
+  const palette = ['#ffd43b', '#fab005', '#ff922b', '#2bd66a', '#ff5a5f', '#9775fa', '#4dabf7']
 
   let canvas: HTMLCanvasElement
   let chart: Chart | null = null
@@ -27,8 +27,8 @@
     if (chart) chart.destroy()
     chart = new Chart(canvas, {
       type: 'doughnut',
-      data: { labels, datasets: [{ data: values, backgroundColor: palette, borderColor: '#0b1120', borderWidth: 2 }] },
-      options: { cutout: '62%', plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8' } } } }
+      data: { labels, datasets: [{ data: values, backgroundColor: palette, borderColor: '#15130d', borderWidth: 2 }] },
+      options: { cutout: '62%', plugins: { legend: { position: 'bottom', labels: { color: '#b8ad8a' } } } }
     })
   }
 

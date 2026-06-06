@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { api } from './api'
+  import { t } from './i18n'
 
   type AssetTable = { table_name: string; header: string[]; rows: string[][]; error?: string }
 
@@ -30,7 +31,7 @@
     try {
       await api.savePortfolioSource(walletUrl)
       savedUrl = walletUrl.trim()
-      sourceMessage = 'Saved.'
+      sourceMessage = $t('portfolio.saved')
     } catch (e) {
       sourceMessage = (e as Error).message
     } finally {
@@ -63,14 +64,16 @@
   }
 </script>
 
-<section class="card">
-  <h2>B3 portfolio (Investidor10)</h2>
-  <p class="muted">Paste your public Investidor10 wallet URL. Scraping uses a headless browser and can take up to a minute.</p>
-  <input bind:value={walletUrl} placeholder="https://investidor10.com.br/carteiras/..." />
+<section class="card" style="margin-top:18px;">
+  <h2>{$t('portfolio.title')}</h2>
+  <p class="muted">{$t('portfolio.subtitle')}</p>
+  <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('portfolio.help')}</p></details>
+
+  <input bind:value={walletUrl} placeholder={$t('portfolio.placeholder')} style="margin-top:12px;" />
   <div class="actions">
-    <button on:click={saveSource} disabled={saving}>{saving ? 'Saving…' : 'Save URL'}</button>
-    <button class="ghost" on:click={loadAssets} disabled={busyAssets || !savedUrl}>{busyAssets ? 'Loading…' : 'Load assets'}</button>
-    <button class="ghost" on:click={loadDividends} disabled={busyDividends || !savedUrl}>{busyDividends ? 'Loading…' : 'Dividend dates'}</button>
+    <button on:click={saveSource} disabled={saving}>{saving ? $t('common.saving') : $t('portfolio.saveUrl')}</button>
+    <button class="ghost" on:click={loadAssets} disabled={busyAssets || !savedUrl}>{busyAssets ? $t('portfolio.loading') : $t('portfolio.loadAssets')}</button>
+    <button class="ghost" on:click={loadDividends} disabled={busyDividends || !savedUrl}>{busyDividends ? $t('portfolio.loading') : $t('portfolio.dividends')}</button>
   </div>
   {#if sourceMessage}<p class="muted">{sourceMessage}</p>{/if}
   {#if assetsError}<p class="error">{assetsError}</p>{/if}
@@ -93,9 +96,9 @@
   {/each}
 
   {#if dividends.length}
-    <h3>Upcoming ex-dividend dates</h3>
+    <h3>{$t('portfolio.upcoming')}</h3>
     <div class="ptable">
-      <div class="prow phead"><div>Asset</div><div>Date</div></div>
+      <div class="prow phead"><div>{$t('portfolio.asset')}</div><div>{$t('portfolio.date')}</div></div>
       {#each dividends as dividend}
         <div class="prow"><div>{dividend.asset}</div><div>{dividend.date_com}</div></div>
       {/each}
