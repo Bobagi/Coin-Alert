@@ -1,50 +1,57 @@
-# Coin Alert (Go)
+# Coin Hub
 
-Web dashboard to log cryptocurrency trades, validate Binance API credentials, and send email alerts, rewritten in Go following SOLID boundaries.
+A personal investing platform served at **https://coin.bobagi.space**. It unifies two
+previously separate projects into one multi-user application:
 
-## Overview
-- API and dashboard served by a single Go binary.
-- PostgreSQL stores trades, email alerts, and Binance credentials.
-- Internal automation services for scheduled buy/sell intervals.
-- Docker Compose with one application container and one PostgreSQL container.
+- **Crypto** — log and automate Binance trades (market buy, take-profit limit sell, daily
+  DCA, price alerts) with per-user, encrypted API credentials. Testnet by default; live
+  trading is an explicit per-user opt-in.
+- **B3 portfolio** — read an [Investidor10](https://investidor10.com.br) public wallet to
+  show holdings, order history, and upcoming dividend (data-com) dates.
 
-## Environment variables
-Copy `.env.example` to `.env` and adjust the values to match your environment (database credentials, SMTP, Binance keys, and scheduler intervals).
+> Replaces the old `Bobagi/Coin-Alert` (Go) and `Bobagi/investidor10` (Python) repos, which
+> are merged here.
 
-## Running with Docker
-1. Build and start the containers:
-   ```
-   docker compose up --build
-   ```
-2. Open `http://localhost:${API_PORT:-5020}` (or the port configured in `API_PORT`) to access the dashboard.
-
-Database migrations run in the separate `migrate` service before the application starts, keeping schema creation and evolution out of the application runtime.
-
-### Updating database credentials after data already exists
-If you change `DB_USER` or `DB_PASSWORD` after the `db_data` volume already exists, PostgreSQL will keep the original credentials stored in the volume. To apply new credentials, remove the volume before starting again:
+## Architecture
 
 ```
-docker compose down -v
-docker compose up --build
+coin.bobagi.space ──nginx(TLS)──▶ web (SvelteKit, Phase 4) ──▶ api (Go) ──▶ Postgres
+                                                                   │
+                                                                   └─▶ scraper (Python/Flask + Selenium)
 ```
 
-Alternatively, keep the same credentials used during the first database initialization.
+| Path          | Service   | Stack                      | Role |
+|---------------|-----------|----------------------------|------|
+| `apps/api`    | `api`     | Go (SOLID, single binary)  | Trading engine + REST API + auth (core) |
+| `apps/scraper`| `scraper` | Python 3.11 / Flask + Selenium | Scrapes Investidor10 wallets (internal-only service) |
+| `apps/web`    | `web`     | SvelteKit (Phase 4)        | Dashboard SPA with real charts |
+| `migrations`  | `migrate` | golang-migrate SQL         | Versioned DB schema |
+| `deploy`      | —         | nginx vhost reference      | Ops reference |
 
-## Project structure
-- `cmd/server`: application entrypoint.
-- `internal/config`: environment configuration loading.
-- `internal/database`: PostgreSQL connector and connection lifecycle.
-- `internal/domain`: domain models.
-- `internal/repository`: PostgreSQL persistence.
-- `internal/service`: business rules and automation services.
-- `internal/httpserver`: HTTP handlers and template rendering.
-- `migrations`: versioned database migrations executed by the `migrate` service.
-- `templates`: HTML/CSS dashboard.
+## Local development
 
-## Features
-- Unified trading operations: purchase, monitor profit target, and mark as sold in a single log.
-- Capital threshold enforcement for the configured trading pair with automatic sell monitoring.
-- List recent operations with purchase and sell details.
-- Send authenticated SMTP email alerts with persistence.
-- Scheduled operations persisted for visibility, including the next predicted action and manual "execute now" trigger.
-- Execution history recorded for every automated attempt with success and error details.
+```bash
+cp .env.example .env          # then fill in real values
+docker compose up --build     # db + migrate + scraper + api
+# API:    http://localhost:5020
+# Scraper is internal-only (http://scraper:5000 from the API)
+```
+
+Apply a new migration: add `NNNN_name.up.sql` / `.down.sql` under `migrations/`, then
+`docker compose up migrate`.
+
+## Roadmap (tracked in the task list)
+
+0. **Monorepo unification** — single repo, one compose. *(done)*
+1. **Multi-user core** — users + auth, per-user encrypted Binance keys, user-scoped data.
+2. **Trading hardening** — stop-loss + risk caps, WebSocket fills/price for fast reaction.
+3. **Portfolio integration** — API calls the scraper; per-user wallet + caching.
+4. **SvelteKit frontend** — auth UI, dashboards, and proper charts.
+5. **Deploy** — ship to coin.bobagi.space, reset DB, decommission old containers/repo.
+
+## Security posture
+
+- Per-user Binance secrets are encrypted at rest (AES-256-GCM) and never logged.
+- Use **trade-only** Binance API keys (withdrawals disabled).
+- New users start on **Binance Testnet**; live trading requires explicit opt-in.
+- Automated trading carries real financial risk; risk controls (stop-loss, caps) are built in.

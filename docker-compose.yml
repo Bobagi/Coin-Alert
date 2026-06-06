@@ -1,32 +1,41 @@
+# Coin Hub — personal investing platform served at https://coin.bobagi.space
+#
+# Services:
+#   db      - PostgreSQL: users, trades, encrypted Binance credentials, portfolio cache
+#   migrate - applies versioned SQL migrations from ./migrations before the API starts
+#   api     - Go backend: trading engine + REST API (the core of the product)
+#   scraper - Python/Flask service that scrapes investidor10.com.br portfolios
+#   web     - SvelteKit frontend (enabled in Phase 4; scaffold lives in apps/web)
+#
+# The API reaches the scraper over the internal compose network as http://scraper:5000.
+
+name: coin-hub
+
 services:
   db:
     image: postgres:13
     restart: always
-    env_file:
-      - .env
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     ports:
-      - "${EXTERNAL_DB_PORT:-5432}:${DB_PORT}"
+      - "${EXTERNAL_DB_PORT:-5450}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     logging:
       driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "7"
+      options: { max-size: "50m", max-file: "7" }
 
   migrate:
     image: migrate/migrate:v4.17.1
     entrypoint: ["/bin/sh", "-c"]
-    command: ["migrate -path /migrations -database postgres://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}?sslmode=disable up"]
+    command: ["migrate -path /migrations -database postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable up"]
     volumes:
       - ./migrations:/migrations
     depends_on:
@@ -34,20 +43,41 @@ services:
         condition: service_healthy
     restart: "no"
 
-  app:
-    build: .
+  scraper:
+    build: ./apps/scraper
+    restart: always
+    env_file: [.env]
+    # Internal only. Reached by the API as http://scraper:5000 over the compose network.
+    expose:
+      - "5000"
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "7" }
+
+  api:
+    build: ./apps/api
+    restart: always
+    env_file: [.env]
+    environment:
+      SCRAPER_BASE_URL: http://scraper:5000
     depends_on:
       migrate:
         condition: service_completed_successfully
-    env_file:
-      - .env
+      scraper:
+        condition: service_started
     ports:
       - "${API_PORT:-5020}:${API_PORT:-5020}"
     logging:
       driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "7"
+      options: { max-size: "50m", max-file: "7" }
+
+  # web:                      # Phase 4 — SvelteKit frontend (see apps/web)
+  #   build: ./apps/web
+  #   restart: always
+  #   env_file: [.env]
+  #   depends_on: [api]
+  #   ports:
+  #     - "${WEB_PORT:-5030}:3000"
 
 volumes:
   db_data:
