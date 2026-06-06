@@ -122,6 +122,18 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	return &operation, nil
 }
 
+// ExecuteDailyPurchase performs the daily DCA buy and records a DAILY_BUY marker execution
+// (used for the daily-buy history and to keep the daily purchase idempotent within a day).
+func (service *UserTradingService) ExecuteDailyPurchase(operationContext context.Context, userIdentifier int64, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64) (*domain.TradingOperation, error) {
+	operation, buyError := service.ExecuteBuy(operationContext, userIdentifier, tradingPairSymbol, quoteAmount, targetProfitPercent)
+	if buyError != nil {
+		service.logExecution(operationContext, userIdentifier, tradingPairSymbol, domain.TradingOperationTypeDailyBuy, 0, 0, 0, false, buyError, nil)
+		return nil, buyError
+	}
+	service.logExecution(operationContext, userIdentifier, operation.TradingPairSymbol, domain.TradingOperationTypeDailyBuy, operation.PurchasePricePerUnit, operation.QuantityPurchased, operation.PurchasePricePerUnit*operation.QuantityPurchased, true, nil, operation.BuyOrderIdentifier)
+	return operation, nil
+}
+
 func (service *UserTradingService) ListOperations(loadContext context.Context, userIdentifier int64, limit int) ([]domain.TradingOperation, error) {
 	return service.operationRepository.ListRecentOperationsForUser(loadContext, userIdentifier, limit)
 }

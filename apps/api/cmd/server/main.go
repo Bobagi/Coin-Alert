@@ -57,6 +57,8 @@ func main() {
 	userTradingService := service.NewUserTradingService(userCredentialService, userTradingSettingsRepository, tradingOperationRepository, tradingOperationExecutionRepository)
 	operationsHandler := httpserver.NewOperationsHandler(sessionService, authHandler.CookieName, userTradingService)
 
+	automationWorker := service.NewAutomationWorker(userRepository, userCredentialService, userTradingSettingsRepository, tradingOperationRepository, tradingOperationExecutionRepository, tradingOperationExecutionRepository, userTradingService, 30*time.Second)
+
 	rootRouter := http.NewServeMux()
 	authHandler.RegisterRoutes(rootRouter)
 	apiHandler.RegisterRoutes(rootRouter)
@@ -68,6 +70,8 @@ func main() {
 
 	applicationContext, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	automationWorker.Start(applicationContext)
 
 	serverAddress := ":" + applicationConfiguration.ServerPort
 	httpServer := &http.Server{Addr: serverAddress, Handler: rootRouter}
