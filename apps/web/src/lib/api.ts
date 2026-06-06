@@ -101,5 +101,19 @@ export const api = {
       symbol,
       quote_amount: quoteAmount,
       target_profit_percent: targetProfitPercent
-    })
+    }),
+
+  getPortfolioSource: () => request<{ wallet_url: string }>('GET', '/api/v1/portfolio/source'),
+  savePortfolioSource: (walletUrl: string) =>
+    request<{ message: string }>('PUT', '/api/v1/portfolio/source', { wallet_url: walletUrl }),
+  getPortfolioAssets: () =>
+    request<{ tables: { table_name: string; header: string[]; rows: string[][]; error?: string }[] }>(
+      'GET',
+      '/api/v1/portfolio/assets'
+    ),
+  getPortfolioDividends: () =>
+    request<{ results: { asset: string; date_com: string }[]; failures: { asset: string; reason: string }[] }>(
+      'GET',
+      '/api/v1/portfolio/dividends'
+    )
 }

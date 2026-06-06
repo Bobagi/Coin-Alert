@@ -33,6 +33,7 @@ func main() {
 	binanceCredentialRepository := repository.NewPostgresBinanceCredentialRepository(postgresConnector.Database)
 	tradingOperationRepository := repository.NewPostgresTradingOperationRepository(postgresConnector.Database)
 	tradingOperationExecutionRepository := repository.NewPostgresTradingOperationExecutionRepository(postgresConnector.Database)
+	userPortfolioRepository := repository.NewPostgresUserPortfolioRepository(postgresConnector.Database)
 
 	// Encryption for Binance secrets at rest. Without a key, credential storage is refused at runtime.
 	secretCipher, secretCipherError := security.NewSecretCipher(os.Getenv("CREDENTIALS_ENCRYPTION_KEY"))
@@ -59,10 +60,14 @@ func main() {
 
 	automationWorker := service.NewAutomationWorker(userRepository, userCredentialService, userTradingSettingsRepository, tradingOperationRepository, tradingOperationExecutionRepository, tradingOperationExecutionRepository, userTradingService, 30*time.Second)
 
+	portfolioScraperClient := service.NewPortfolioScraperClient(environmentValueOrDefault("SCRAPER_BASE_URL", "http://scraper:5000"))
+	portfolioHandler := httpserver.NewPortfolioHandler(sessionService, authHandler.CookieName, userPortfolioRepository, portfolioScraperClient)
+
 	rootRouter := http.NewServeMux()
 	authHandler.RegisterRoutes(rootRouter)
 	apiHandler.RegisterRoutes(rootRouter)
 	operationsHandler.RegisterRoutes(rootRouter)
+	portfolioHandler.RegisterRoutes(rootRouter)
 	rootRouter.HandleFunc("/health", func(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte("ok"))

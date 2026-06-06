@@ -3,6 +3,7 @@
   import { api, type TradingSettings, type CredentialStatus, type Operation } from './api'
   import { currentUser } from './stores'
   import AllocationChart from './AllocationChart.svelte'
+  import PortfolioPanel from './PortfolioPanel.svelte'
 
   let settings: TradingSettings | null = null
   let credentials: CredentialStatus | null = null
@@ -243,6 +244,8 @@
       </div>
     {/if}
   </section>
+
+  <PortfolioPanel />
 </main>
 
 <style>
