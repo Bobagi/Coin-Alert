@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.svelte-kit/
+*.local
+
+# The repo-root .gitignore ignores any "lib/" directory; our Svelte source lives in
+# src/lib, so re-include it here (deeper .gitignore wins).
+!src/lib/
+!src/lib/**
