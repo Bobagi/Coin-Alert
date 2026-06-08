@@ -24,6 +24,7 @@ import (
 type SymbolFilters struct {
 	TickSize         float64
 	StepSize         float64
+	MinNotional      float64 // minimum order value (price * quantity), from the NOTIONAL filter
 	PriceDecimals    int
 	QuantityDecimals int
 }
@@ -121,13 +122,23 @@ func (service *BinanceTradingService) PlaceMarketBuyByQuote(requestContext conte
 func (service *BinanceTradingService) PlaceLimitSell(requestContext context.Context, tradingPairSymbol string, quantity float64, targetPrice float64, filters SymbolFilters) (*binanceOrderResponse, error) {
 	// Snap the price/quantity to the symbol's tick/step so Binance accepts the order. When filters
 	// are unavailable (fetch failed) we fall back to raw formatting rather than mis-round to integers.
+	roundedPrice := targetPrice
 	priceText := formatDecimal(targetPrice)
 	if filters.TickSize > 0 {
-		priceText = formatWithDecimals(roundToIncrement(targetPrice, filters.TickSize), filters.PriceDecimals)
+		roundedPrice = roundToIncrement(targetPrice, filters.TickSize)
+		priceText = formatWithDecimals(roundedPrice, filters.PriceDecimals)
 	}
+	roundedQuantity := quantity
 	quantityText := formatDecimal(quantity)
 	if filters.StepSize > 0 {
-		quantityText = formatWithDecimals(floorToIncrement(quantity, filters.StepSize), filters.QuantityDecimals)
+		roundedQuantity = floorToIncrement(quantity, filters.StepSize)
+		quantityText = formatWithDecimals(roundedQuantity, filters.QuantityDecimals)
+	}
+
+	// A limit order's value must meet the symbol's NOTIONAL minimum, or Binance rejects it (-1013).
+	if filters.MinNotional > 0 && roundedPrice*roundedQuantity < filters.MinNotional {
+		return nil, fmt.Errorf("this position is too small for a sell order: its value %s is below Binance's minimum order value (NOTIONAL %s) for %s",
+			formatDecimal(roundedPrice*roundedQuantity), formatDecimal(filters.MinNotional), tradingPairSymbol)
 	}
 
 	requestParameters := url.Values{}
@@ -298,9 +309,10 @@ func (service *BinanceTradingService) FetchSymbolFilters(requestContext context.
 	var payload struct {
 		Symbols []struct {
 			Filters []struct {
-				FilterType string `json:"filterType"`
-				TickSize   string `json:"tickSize"`
-				StepSize   string `json:"stepSize"`
+				FilterType  string `json:"filterType"`
+				TickSize    string `json:"tickSize"`
+				StepSize    string `json:"stepSize"`
+				MinNotional string `json:"minNotional"`
 			} `json:"filters"`
 		} `json:"symbols"`
 	}
@@ -320,6 +332,8 @@ func (service *BinanceTradingService) FetchSymbolFilters(requestContext context.
 		case "LOT_SIZE":
 			filters.StepSize, _ = strconv.ParseFloat(filter.StepSize, 64)
 			filters.QuantityDecimals = decimalPlaces(filter.StepSize)
+		case "NOTIONAL", "MIN_NOTIONAL":
+			filters.MinNotional, _ = strconv.ParseFloat(filter.MinNotional, 64)
 		}
 	}
 	return filters, nil
