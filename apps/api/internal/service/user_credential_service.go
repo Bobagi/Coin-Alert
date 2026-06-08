@@ -121,6 +121,16 @@ func (service *UserCredentialService) ActivateEnvironment(operationContext conte
 	return service.repository.ActivateEnvironmentForUser(operationContext, userIdentifier, normalizedEnvironment)
 }
 
+// ActiveEnvironmentName returns the user's active Binance environment, defaulting to TESTNET when the
+// user has not connected any credentials yet. Used to scope settings/operations to one environment.
+func (service *UserCredentialService) ActiveEnvironmentName(operationContext context.Context, userIdentifier int64) string {
+	record, loadError := service.repository.LoadActiveCredentialForUser(operationContext, userIdentifier)
+	if loadError == nil && record != nil {
+		return record.EnvironmentName
+	}
+	return domain.BinanceEnvironmentTestnet
+}
+
 // GetStatus returns a non-sensitive summary suitable for the dashboard.
 func (service *UserCredentialService) GetStatus(operationContext context.Context, userIdentifier int64) (CredentialStatus, error) {
 	configuredEnvironments, listError := service.repository.ListConfiguredEnvironmentsForUser(operationContext, userIdentifier)

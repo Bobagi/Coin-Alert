@@ -3,11 +3,13 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"coin-alert/internal/domain"
+	"coin-alert/internal/repository"
 	"coin-alert/internal/service"
 )
 
@@ -28,6 +30,7 @@ func NewOperationsHandler(sessionService *service.SessionService, cookieName str
 
 func (handler *OperationsHandler) RegisterRoutes(router *http.ServeMux) {
 	router.HandleFunc("/api/v1/operations", handler.handleOperations)
+	router.HandleFunc("/api/v1/operations/sell", handler.handleSellOperation)
 	router.HandleFunc("/api/v1/operations/executions", handler.handleExecutions)
 	router.HandleFunc("/api/v1/binance/open-orders", handler.handleOpenOrders)
 }
@@ -117,6 +120,44 @@ func (handler *OperationsHandler) handleOperations(responseWriter http.ResponseW
 	default:
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+type sellRequestPayload struct {
+	OperationID int64 `json:"operation_id"`
+}
+
+func (handler *OperationsHandler) handleSellOperation(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	userIdentifier, authenticated := handler.requireUser(responseWriter, request)
+	if !authenticated {
+		return
+	}
+
+	var payload sellRequestPayload
+	if decodeError := json.NewDecoder(request.Body).Decode(&payload); decodeError != nil {
+		writeJSONError(responseWriter, http.StatusBadRequest, "Invalid request body.")
+		return
+	}
+	if payload.OperationID <= 0 {
+		writeJSONError(responseWriter, http.StatusBadRequest, "An operation id is required.")
+		return
+	}
+
+	operationContext, cancel := context.WithTimeout(request.Context(), 25*time.Second)
+	defer cancel()
+	operation, sellError := handler.tradingService.CloseOperationNow(operationContext, userIdentifier, payload.OperationID)
+	if sellError != nil {
+		if errors.Is(sellError, repository.ErrOperationNotFound) {
+			writeJSONError(responseWriter, http.StatusNotFound, "Operation not found.")
+			return
+		}
+		writeJSONError(responseWriter, http.StatusBadRequest, sellError.Error())
+		return
+	}
+	writeJSON(responseWriter, http.StatusOK, toOperationPayload(*operation))
 }
 
 func (handler *OperationsHandler) handleExecutions(responseWriter http.ResponseWriter, request *http.Request) {

@@ -35,15 +35,18 @@ docker-compose.yml   db + migrate + api (+ scraper under the `scraper` profile).
   keys, AES-256-GCM at rest), `UserTradingService` (buy = market + take-profit limit sell),
   `AutomationWorker` (per-user reconcile + stop-loss + daily DCA, 30s poll), Binance REST clients,
   `PortfolioScraperClient`.
-- `httpserver` — JSON handlers: `auth_handler`, `api_handler` (settings/credentials/price/symbols),
+- `httpserver` — JSON handlers: `auth_handler` (email + Google OAuth), `account_handler`
+  (profile/password/delete), `api_handler` (settings/credentials/price/symbols),
   `operations_handler`, `portfolio_handler`. `server.go` is **legacy single-user dead code** (not
-  wired; delete when convenient).
+  wired; delete when convenient). Google OAuth lives in `service/google_oauth_service.go` (stdlib
+  only, no extra module); it is **config-driven** — unset `GOOGLE_OAUTH_*` ⇒ feature off & button hidden.
 
-## API surface (all cookie-authenticated except signup/login)
-`/auth/{signup,login,logout,me}` · `/api/v1/settings` (GET/PUT) ·
+## API surface (cookie-authenticated except signup/login/providers and the Google redirect flow)
+`/auth/{signup,login,logout,me,providers}` · `/auth/google/{login,callback}` · `/api/v1/settings` (GET/PUT) ·
 `/api/v1/binance/{credentials,credentials/activate,price,symbols,open-orders}` ·
-`/api/v1/operations` (GET list / POST buy) · `/api/v1/operations/executions` ·
-`/api/v1/portfolio/{source,assets,dividends}` · `/health`.
+`/api/v1/operations` (GET list / POST buy) · `/api/v1/operations/sell` (POST close-now at market) · `/api/v1/operations/executions` ·
+`/api/v1/portfolio/{source,assets,dividends}` ·
+`/api/v1/account/profile` (PUT) · `/api/v1/account/password` (POST) · `/api/v1/account` (DELETE) · `/health`.
 Sessions = opaque random token in a Secure httpOnly cookie (`coin_hub_session`); only its SHA-256
 hash is stored.
 
@@ -84,10 +87,23 @@ cd apps/web && pnpm build                        # rebuild the SPA nginx serves
   there, not inline.
 
 ## Status (2026-06)
-Done & live: monorepo unification; multi-user auth; per-user encrypted Binance creds; settings;
-operations (manual buy + take-profit); automation worker (reconcile + stop-loss + daily DCA);
-Svelte dashboard with explanations, gold theme, favicon, i18n; allocation chart; portfolio scraper
-integration. Pending/optional: per-user email price alerts (table exists, route not rebuilt); more
+Done & live: monorepo unification; multi-user auth (email + **Google OAuth**, migration 0009 makes
+`password_hash` nullable + adds `google_subject`); **account settings page** (edit name, set/change
+password, language, delete account — cascades via the user FKs); per-user encrypted Binance creds;
+settings (incl. **daily-buy on/off toggle** `daily_purchase_enabled`, migration 0010); operations
+(manual buy + take-profit + **manual close-now** `CloseOperationNow`); **per-environment isolation**
+(migration 0011: `binance_environment` tags operations/executions and is part of the
+`user_trading_settings` composite PK — listings, the worker and settings all scope to the user's active
+environment via `UserCredentialService.ActiveEnvironmentName`); automation worker (reconcile + stop-loss
++ daily DCA, skipped when the toggle is off); Svelte SPA with a **design system** (rem type scale +
+spacing tokens in `app.css`, sticky `TopNav`, **SVG flags** in `LanguageDropdown` — emoji flags break on
+Windows, hash router in `stores.ts`), a **3-tab dashboard** (Binance connection [default] / Trade /
+B3-Investidor10) with an **environment switcher** (buttons; selecting activates + reloads) + **symbol
+autocomplete** (`SymbolAutocomplete`, via `/binance/symbols`), a **bot-status panel** with an on/off
+button + **local-timezone** daily-buy picker, allocation chart with value/% legend, an **operations
+history sub-tab** (executions, for auditing), a **non-custodial disclaimer/ToS** (`LegalFooter`),
+explanations, gold theme, favicon, i18n; portfolio scraper integration. Pending/optional: per-user email price alerts (table
+exists, route not rebuilt); more
 chart types (PnL/price/dividend calendar); WebSocket fills/price (today 30s polling; take-profit is
 already a resting limit order at exchange speed); delete legacy `server.go` + templates; decommission
 the old standalone `investidor10` container (:3054), now redundant.

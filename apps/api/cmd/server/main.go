@@ -49,7 +49,16 @@ func main() {
 	sessionService := service.NewSessionService(userSessionRepository, 720*time.Hour)
 	authService := service.NewAuthService(userRepository, userTradingSettingsRepository, passwordService)
 	secureSessionCookies := os.Getenv("APP_SECURE_COOKIES") != "false"
-	authHandler := httpserver.NewAuthHandler(authService, sessionService, secureSessionCookies)
+	googleOAuthService := service.NewGoogleOAuthService(
+		os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+		os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
+	)
+	if googleOAuthService != nil {
+		log.Println("Google sign-in is enabled")
+	}
+	authHandler := httpserver.NewAuthHandler(authService, sessionService, googleOAuthService, secureSessionCookies)
+	accountHandler := httpserver.NewAccountHandler(authService, sessionService, authHandler.CookieName, secureSessionCookies)
 
 	// Per-user trading configuration and Binance credentials.
 	userCredentialService := service.NewUserCredentialService(binanceCredentialRepository, secretCipher, testnetBaseURL, productionBaseURL)
@@ -65,6 +74,7 @@ func main() {
 
 	rootRouter := http.NewServeMux()
 	authHandler.RegisterRoutes(rootRouter)
+	accountHandler.RegisterRoutes(rootRouter)
 	apiHandler.RegisterRoutes(rootRouter)
 	operationsHandler.RegisterRoutes(rootRouter)
 	portfolioHandler.RegisterRoutes(rootRouter)

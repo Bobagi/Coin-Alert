@@ -15,7 +15,7 @@ type activeUserLister interface {
 }
 
 type dailyPurchaseGuard interface {
-	HasSuccessfulExecutionOfTypeSince(loadContext context.Context, userIdentifier int64, operationType string, since time.Time) (bool, error)
+	HasSuccessfulExecutionOfTypeSince(loadContext context.Context, userIdentifier int64, environment string, operationType string, since time.Time) (bool, error)
 }
 
 // AutomationWorker runs per-user background trading automation: it reconciles filled take-profit
@@ -94,7 +94,7 @@ func (worker *AutomationWorker) monitorUser(applicationContext context.Context, 
 		return
 	}
 
-	openOperations, listError := worker.operationRepository.ListOpenOperationsForUser(applicationContext, userIdentifier)
+	openOperations, listError := worker.operationRepository.ListOpenOperationsForUser(applicationContext, userIdentifier, environmentConfiguration.EnvironmentName)
 	if listError != nil {
 		log.Printf("automation: open operations for user %d failed: %v", userIdentifier, listError)
 		return
@@ -103,7 +103,7 @@ func (worker *AutomationWorker) monitorUser(applicationContext context.Context, 
 		return
 	}
 
-	settings, _ := worker.settingsRepository.GetByUserIdentifier(applicationContext, userIdentifier)
+	settings, _ := worker.settingsRepository.GetByUserAndEnvironment(applicationContext, userIdentifier, environmentConfiguration.EnvironmentName)
 	tradingService := NewBinanceTradingService(*environmentConfiguration)
 	priceService := NewBinancePriceService(*environmentConfiguration)
 	priceBySymbol := make(map[string]float64)
@@ -163,7 +163,7 @@ func (worker *AutomationWorker) processOpenOperation(applicationContext context.
 
 	sellResponse, sellError := tradingService.PlaceMarketSellByQuantity(applicationContext, operation.TradingPairSymbol, operation.QuantityPurchased)
 	if sellError != nil {
-		worker.logSellExecution(applicationContext, userIdentifier, operation.TradingPairSymbol, currentPrice, operation.QuantityPurchased, false, sellError, nil)
+		worker.logSellExecution(applicationContext, userIdentifier, operation.BinanceEnvironment, operation.TradingPairSymbol, currentPrice, operation.QuantityPurchased, false, sellError, nil)
 		log.Printf("automation: stop-loss market sell failed for operation %d (user %d): %v", operation.Identifier, userIdentifier, sellError)
 		return
 	}
@@ -175,26 +175,27 @@ func (worker *AutomationWorker) markOperationSold(applicationContext context.Con
 		log.Printf("automation: could not mark operation %d sold (user %d): %v", operation.Identifier, userIdentifier, updateError)
 		return
 	}
-	worker.logSellExecution(applicationContext, userIdentifier, operation.TradingPairSymbol, fillPrice, operation.QuantityPurchased, true, nil, operation.SellOrderIdentifier)
+	worker.logSellExecution(applicationContext, userIdentifier, operation.BinanceEnvironment, operation.TradingPairSymbol, fillPrice, operation.QuantityPurchased, true, nil, operation.SellOrderIdentifier)
 	log.Printf("automation: closed operation %d (user %d) via %s at %.8f", operation.Identifier, userIdentifier, reason, fillPrice)
 }
 
-func (worker *AutomationWorker) logSellExecution(applicationContext context.Context, userIdentifier int64, tradingPairSymbol string, unitPrice float64, quantity float64, success bool, cause error, orderIdentifier *string) {
+func (worker *AutomationWorker) logSellExecution(applicationContext context.Context, userIdentifier int64, environment string, tradingPairSymbol string, unitPrice float64, quantity float64, success bool, cause error, orderIdentifier *string) {
 	var errorMessage *string
 	if cause != nil {
 		message := cause.Error()
 		errorMessage = &message
 	}
 	_, _ = worker.executionRepository.LogExecutionForUser(applicationContext, userIdentifier, domain.TradingOperationExecution{
-		TradingPairSymbol: tradingPairSymbol,
-		OperationType:     domain.TradingOperationTypeSell,
-		UnitPrice:         unitPrice,
-		Quantity:          quantity,
-		TotalValue:        unitPrice * quantity,
-		ExecutedAt:        time.Now(),
-		Success:           success,
-		ErrorMessage:      errorMessage,
-		OrderIdentifier:   orderIdentifier,
+		TradingPairSymbol:  tradingPairSymbol,
+		OperationType:      domain.TradingOperationTypeSell,
+		BinanceEnvironment: environment,
+		UnitPrice:          unitPrice,
+		Quantity:           quantity,
+		TotalValue:         unitPrice * quantity,
+		ExecutedAt:         time.Now(),
+		Success:            success,
+		ErrorMessage:       errorMessage,
+		OrderIdentifier:    orderIdentifier,
 	})
 }
 
@@ -222,24 +223,26 @@ func (worker *AutomationWorker) processDailyPurchases(applicationContext context
 	startOfDayUTC := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
 
 	for _, userIdentifier := range userIdentifiers {
-		settings, _ := worker.settingsRepository.GetByUserIdentifier(applicationContext, userIdentifier)
-		if settings == nil || settings.CapitalThreshold <= 0 {
+		environmentConfiguration, _ := worker.credentialService.LoadActiveEnvironmentConfiguration(applicationContext, userIdentifier)
+		if environmentConfiguration == nil {
+			continue
+		}
+		environmentName := environmentConfiguration.EnvironmentName
+
+		settings, _ := worker.settingsRepository.GetByUserAndEnvironment(applicationContext, userIdentifier, environmentName)
+		if settings == nil || !settings.DailyPurchaseEnabled || settings.CapitalThreshold <= 0 {
 			continue
 		}
 		if nowUTC.Hour() != settings.DailyPurchaseHourUTC {
 			continue
 		}
-		environmentConfiguration, _ := worker.credentialService.LoadActiveEnvironmentConfiguration(applicationContext, userIdentifier)
-		if environmentConfiguration == nil {
-			continue
-		}
-		alreadyPurchased, _ := worker.purchaseGuard.HasSuccessfulExecutionOfTypeSince(applicationContext, userIdentifier, domain.TradingOperationTypeDailyBuy, startOfDayUTC)
+		alreadyPurchased, _ := worker.purchaseGuard.HasSuccessfulExecutionOfTypeSince(applicationContext, userIdentifier, environmentName, domain.TradingOperationTypeDailyBuy, startOfDayUTC)
 		if alreadyPurchased {
 			continue
 		}
 
 		log.Printf("automation: running daily purchase for user %d", userIdentifier)
-		if _, purchaseError := worker.tradingService.ExecuteDailyPurchase(applicationContext, userIdentifier, settings.TradingPairSymbol, settings.CapitalThreshold, settings.TargetProfitPercent); purchaseError != nil {
+		if _, purchaseError := worker.tradingService.ExecuteDailyPurchase(applicationContext, userIdentifier, environmentName, settings.TradingPairSymbol, settings.CapitalThreshold, settings.TargetProfitPercent); purchaseError != nil {
 			log.Printf("automation: daily purchase failed for user %d: %v", userIdentifier, purchaseError)
 		}
 	}

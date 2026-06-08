@@ -64,12 +64,14 @@
   }
 </script>
 
-<section class="card" style="margin-top:18px;">
-  <h2>{$t('portfolio.title')}</h2>
-  <p class="muted">{$t('portfolio.subtitle')}</p>
+<section class="card">
+  <div class="card-header">
+    <span class="card-title">{$t('portfolio.title')}</span>
+    <span class="card-subtitle">{$t('portfolio.subtitle')}</span>
+  </div>
   <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('portfolio.help')}</p></details>
 
-  <input bind:value={walletUrl} placeholder={$t('portfolio.placeholder')} style="margin-top:12px;" />
+  <input class="mt-4" bind:value={walletUrl} placeholder={$t('portfolio.placeholder')} />
   <div class="actions">
     <button on:click={saveSource} disabled={saving}>{saving ? $t('common.saving') : $t('portfolio.saveUrl')}</button>
     <button class="ghost" on:click={loadAssets} disabled={busyAssets || !savedUrl}>{busyAssets ? $t('portfolio.loading') : $t('portfolio.loadAssets')}</button>

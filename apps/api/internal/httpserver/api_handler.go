@@ -66,6 +66,7 @@ type tradingSettingsPayload struct {
 	StopLossPercent              *float64 `json:"stop_loss_percent"`
 	AutomaticSellIntervalMinutes int      `json:"auto_sell_interval_minutes"`
 	DailyPurchaseHourUTC         int      `json:"daily_purchase_hour_utc"`
+	DailyPurchaseEnabled         bool     `json:"daily_purchase_enabled"`
 	LiveTradingEnabled           bool     `json:"live_trading_enabled"`
 	ActiveBinanceEnvironment     string   `json:"active_binance_environment"`
 }
@@ -80,7 +81,8 @@ func (handler *APIHandler) handleSettings(responseWriter http.ResponseWriter, re
 	case http.MethodGet:
 		operationContext, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 		defer cancel()
-		settings, settingsError := handler.tradingSettingsRepository.EnsureDefaults(operationContext, userIdentifier)
+		environmentName := handler.credentialService.ActiveEnvironmentName(operationContext, userIdentifier)
+		settings, settingsError := handler.tradingSettingsRepository.EnsureDefaults(operationContext, userIdentifier, environmentName)
 		if settingsError != nil || settings == nil {
 			writeJSONError(responseWriter, http.StatusInternalServerError, "Could not load settings.")
 			return
@@ -95,6 +97,7 @@ func (handler *APIHandler) handleSettings(responseWriter http.ResponseWriter, re
 		}
 		operationContext, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 		defer cancel()
+		environmentName := handler.credentialService.ActiveEnvironmentName(operationContext, userIdentifier)
 		updatedSettings := domain.UserTradingSettings{
 			UserIdentifier:               userIdentifier,
 			TradingPairSymbol:            normalizeSymbolOrDefault(payload.TradingPairSymbol),
@@ -103,8 +106,10 @@ func (handler *APIHandler) handleSettings(responseWriter http.ResponseWriter, re
 			StopLossPercent:              payload.StopLossPercent,
 			AutomaticSellIntervalMinutes: clampIntervalMinutes(payload.AutomaticSellIntervalMinutes),
 			DailyPurchaseHourUTC:         clampHourOfDay(payload.DailyPurchaseHourUTC),
+			DailyPurchaseEnabled:         payload.DailyPurchaseEnabled,
 			LiveTradingEnabled:           payload.LiveTradingEnabled,
-			ActiveBinanceEnvironment:     domain.NormalizeBinanceEnvironment(payload.ActiveBinanceEnvironment),
+			ActiveBinanceEnvironment:     environmentName,
+			BinanceEnvironment:           environmentName,
 		}
 		if upsertError := handler.tradingSettingsRepository.Upsert(operationContext, updatedSettings); upsertError != nil {
 			writeJSONError(responseWriter, http.StatusInternalServerError, "Could not save settings.")
@@ -278,6 +283,7 @@ func toTradingSettingsPayload(settings *domain.UserTradingSettings) tradingSetti
 		StopLossPercent:              settings.StopLossPercent,
 		AutomaticSellIntervalMinutes: settings.AutomaticSellIntervalMinutes,
 		DailyPurchaseHourUTC:         settings.DailyPurchaseHourUTC,
+		DailyPurchaseEnabled:         settings.DailyPurchaseEnabled,
 		LiveTradingEnabled:           settings.LiveTradingEnabled,
 		ActiveBinanceEnvironment:     settings.ActiveBinanceEnvironment,
 	}

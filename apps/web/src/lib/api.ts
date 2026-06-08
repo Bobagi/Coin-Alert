@@ -5,6 +5,13 @@ export interface User {
   id: number
   email: string
   display_name: string
+  has_password: boolean
+  google_connected: boolean
+  created_at: string
+}
+
+export interface AuthProviders {
+  google: boolean
 }
 
 export interface TradingSettings {
@@ -14,6 +21,7 @@ export interface TradingSettings {
   stop_loss_percent: number | null
   auto_sell_interval_minutes: number
   daily_purchase_hour_utc: number
+  daily_purchase_enabled: boolean
   live_trading_enabled: boolean
   active_binance_environment: string
 }
@@ -76,6 +84,17 @@ export const api = {
     request<User>('POST', '/auth/login', { email, password }),
   logout: () => request<{ message: string }>('POST', '/auth/logout'),
   me: () => request<User>('GET', '/auth/me'),
+  getAuthProviders: () => request<AuthProviders>('GET', '/auth/providers'),
+
+  updateProfile: (displayName: string) =>
+    request<User>('PUT', '/api/v1/account/profile', { display_name: displayName }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ message: string }>('POST', '/api/v1/account/password', {
+      current_password: currentPassword,
+      new_password: newPassword
+    }),
+  deleteAccount: (password: string) =>
+    request<{ message: string }>('DELETE', '/api/v1/account', { password, confirm: true }),
 
   getSettings: () => request<TradingSettings>('GET', '/api/v1/settings'),
   saveSettings: (settings: TradingSettings) => request<TradingSettings>('PUT', '/api/v1/settings', settings),
@@ -96,6 +115,8 @@ export const api = {
 
   getOperations: () => request<Operation[]>('GET', '/api/v1/operations'),
   getExecutions: () => request<Execution[]>('GET', '/api/v1/operations/executions'),
+  sellOperation: (operationId: number) =>
+    request<Operation>('POST', '/api/v1/operations/sell', { operation_id: operationId }),
   buy: (symbol: string, quoteAmount: number, targetProfitPercent: number) =>
     request<Operation>('POST', '/api/v1/operations', {
       symbol,

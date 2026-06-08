@@ -8,18 +8,19 @@ const (
 )
 
 type TradingOperation struct {
-        Identifier           int64
-        TradingPairSymbol    string
-        QuantityPurchased    float64
-        PurchasePricePerUnit float64
-        TargetProfitPercent  float64
-        Status               string
-        SellPricePerUnit     *float64
-        SellTargetPricePerUnit *float64
-        BuyOrderIdentifier     *string
-        SellOrderIdentifier    *string
-        PurchaseTimestamp    time.Time
-        SellTimestamp        *time.Time
+	Identifier             int64
+	TradingPairSymbol      string
+	QuantityPurchased      float64
+	PurchasePricePerUnit   float64
+	TargetProfitPercent    float64
+	Status                 string
+	BinanceEnvironment     string // the environment (TESTNET/PRODUCTION) this operation was made in
+	SellPricePerUnit       *float64
+	SellTargetPricePerUnit *float64
+	BuyOrderIdentifier     *string
+	SellOrderIdentifier    *string
+	PurchaseTimestamp      time.Time
+	SellTimestamp          *time.Time
 }
 
 func (operation TradingOperation) PurchaseValueTotal() float64 {

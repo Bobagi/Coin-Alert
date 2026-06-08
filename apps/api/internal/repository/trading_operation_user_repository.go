@@ -3,29 +3,34 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"coin-alert/internal/domain"
 )
 
+// ErrOperationNotFound is returned when no operation matches the id for the given user.
+var ErrOperationNotFound = errors.New("operation not found")
+
 const userTradingOperationColumns = `id, trading_pair_symbol, quantity_purchased, purchase_price_per_unit,
 	target_profit_percent, status, sell_price_per_unit, purchased_at, sold_at,
-	buy_order_id, sell_order_id, sell_target_price_per_unit`
+	buy_order_id, sell_order_id, sell_target_price_per_unit, COALESCE(binance_environment, '')`
 
-// UserTradingOperationRepository persists trading operations scoped to a single user.
+// UserTradingOperationRepository persists trading operations scoped to a single user AND environment.
 type UserTradingOperationRepository interface {
 	CreatePurchaseOperationForUser(operationContext context.Context, userIdentifier int64, operation domain.TradingOperation) (int64, error)
-	ListRecentOperationsForUser(loadContext context.Context, userIdentifier int64, limit int) ([]domain.TradingOperation, error)
-	ListOpenOperationsForUser(loadContext context.Context, userIdentifier int64) ([]domain.TradingOperation, error)
+	ListRecentOperationsForUser(loadContext context.Context, userIdentifier int64, environment string, limit int) ([]domain.TradingOperation, error)
+	ListOpenOperationsForUser(loadContext context.Context, userIdentifier int64, environment string) ([]domain.TradingOperation, error)
+	FindOperationByIdForUser(loadContext context.Context, userIdentifier int64, operationIdentifier int64) (*domain.TradingOperation, error)
 	UpdateOperationAsSoldForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellPricePerUnit float64) error
-	CalculateOpenAllocationTotalForUser(loadContext context.Context, userIdentifier int64) (float64, error)
+	CalculateOpenAllocationTotalForUser(loadContext context.Context, userIdentifier int64, environment string) (float64, error)
 }
 
 func (repository *PostgresTradingOperationRepository) CreatePurchaseOperationForUser(operationContext context.Context, userIdentifier int64, operation domain.TradingOperation) (int64, error) {
 	row := repository.Database.QueryRowContext(
 		operationContext,
 		`INSERT INTO trading_operations
-		    (user_id, trading_pair_symbol, quantity_purchased, purchase_price_per_unit, target_profit_percent, status, buy_order_id, sell_order_id, sell_target_price_per_unit)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		    (user_id, trading_pair_symbol, quantity_purchased, purchase_price_per_unit, target_profit_percent, status, buy_order_id, sell_order_id, sell_target_price_per_unit, binance_environment)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING id`,
 		userIdentifier,
 		operation.TradingPairSymbol,
@@ -36,6 +41,7 @@ func (repository *PostgresTradingOperationRepository) CreatePurchaseOperationFor
 		operation.BuyOrderIdentifier,
 		operation.SellOrderIdentifier,
 		operation.SellTargetPricePerUnit,
+		operation.BinanceEnvironment,
 	)
 	var operationIdentifier int64
 	if scanError := row.Scan(&operationIdentifier); scanError != nil {
@@ -44,11 +50,11 @@ func (repository *PostgresTradingOperationRepository) CreatePurchaseOperationFor
 	return operationIdentifier, nil
 }
 
-func (repository *PostgresTradingOperationRepository) ListRecentOperationsForUser(loadContext context.Context, userIdentifier int64, limit int) ([]domain.TradingOperation, error) {
+func (repository *PostgresTradingOperationRepository) ListRecentOperationsForUser(loadContext context.Context, userIdentifier int64, environment string, limit int) ([]domain.TradingOperation, error) {
 	rows, queryError := repository.Database.QueryContext(
 		loadContext,
-		`SELECT `+userTradingOperationColumns+` FROM trading_operations WHERE user_id = $1 ORDER BY purchased_at DESC LIMIT $2`,
-		userIdentifier, limit,
+		`SELECT `+userTradingOperationColumns+` FROM trading_operations WHERE user_id = $1 AND binance_environment = $2 ORDER BY purchased_at DESC LIMIT $3`,
+		userIdentifier, environment, limit,
 	)
 	if queryError != nil {
 		return nil, queryError
@@ -57,17 +63,37 @@ func (repository *PostgresTradingOperationRepository) ListRecentOperationsForUse
 	return scanUserTradingOperationRows(rows)
 }
 
-func (repository *PostgresTradingOperationRepository) ListOpenOperationsForUser(loadContext context.Context, userIdentifier int64) ([]domain.TradingOperation, error) {
+func (repository *PostgresTradingOperationRepository) ListOpenOperationsForUser(loadContext context.Context, userIdentifier int64, environment string) ([]domain.TradingOperation, error) {
 	rows, queryError := repository.Database.QueryContext(
 		loadContext,
-		`SELECT `+userTradingOperationColumns+` FROM trading_operations WHERE user_id = $1 AND status = $2 ORDER BY purchased_at ASC`,
-		userIdentifier, domain.TradingOperationStatusOpen,
+		`SELECT `+userTradingOperationColumns+` FROM trading_operations WHERE user_id = $1 AND binance_environment = $2 AND status = $3 ORDER BY purchased_at ASC`,
+		userIdentifier, environment, domain.TradingOperationStatusOpen,
 	)
 	if queryError != nil {
 		return nil, queryError
 	}
 	defer rows.Close()
 	return scanUserTradingOperationRows(rows)
+}
+
+func (repository *PostgresTradingOperationRepository) FindOperationByIdForUser(loadContext context.Context, userIdentifier int64, operationIdentifier int64) (*domain.TradingOperation, error) {
+	rows, queryError := repository.Database.QueryContext(
+		loadContext,
+		`SELECT `+userTradingOperationColumns+` FROM trading_operations WHERE id = $1 AND user_id = $2 LIMIT 1`,
+		operationIdentifier, userIdentifier,
+	)
+	if queryError != nil {
+		return nil, queryError
+	}
+	defer rows.Close()
+	operations, scanError := scanUserTradingOperationRows(rows)
+	if scanError != nil {
+		return nil, scanError
+	}
+	if len(operations) == 0 {
+		return nil, ErrOperationNotFound
+	}
+	return &operations[0], nil
 }
 
 func (repository *PostgresTradingOperationRepository) UpdateOperationAsSoldForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellPricePerUnit float64) error {
@@ -79,11 +105,11 @@ func (repository *PostgresTradingOperationRepository) UpdateOperationAsSoldForUs
 	return updateError
 }
 
-func (repository *PostgresTradingOperationRepository) CalculateOpenAllocationTotalForUser(loadContext context.Context, userIdentifier int64) (float64, error) {
+func (repository *PostgresTradingOperationRepository) CalculateOpenAllocationTotalForUser(loadContext context.Context, userIdentifier int64, environment string) (float64, error) {
 	row := repository.Database.QueryRowContext(
 		loadContext,
-		`SELECT COALESCE(SUM(quantity_purchased * purchase_price_per_unit), 0) FROM trading_operations WHERE user_id = $1 AND status = $2`,
-		userIdentifier, domain.TradingOperationStatusOpen,
+		`SELECT COALESCE(SUM(quantity_purchased * purchase_price_per_unit), 0) FROM trading_operations WHERE user_id = $1 AND binance_environment = $2 AND status = $3`,
+		userIdentifier, environment, domain.TradingOperationStatusOpen,
 	)
 	var totalAllocated float64
 	if scanError := row.Scan(&totalAllocated); scanError != nil {
@@ -113,6 +139,7 @@ func scanUserTradingOperationRows(rows *sql.Rows) ([]domain.TradingOperation, er
 			&buyOrderIdentifier,
 			&sellOrderIdentifier,
 			&sellTargetPrice,
+			&operation.BinanceEnvironment,
 		)
 		if scanError != nil {
 			return nil, scanError
