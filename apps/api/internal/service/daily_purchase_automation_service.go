@@ -120,7 +120,11 @@ func (service *DailyPurchaseAutomationService) executeDailyPurchase(applicationC
 
 	sellExecutionContext, sellExecutionCancel := context.WithTimeout(applicationContext, 15*time.Second)
 	defer sellExecutionCancel()
-	sellOrderResponse, sellError := service.BinanceTradingService.PlaceLimitSell(sellExecutionContext, settings.TradingPairSymbol, executedQuantity, targetSellPricePerUnit)
+	symbolFilters, _ := service.BinanceTradingService.FetchSymbolFilters(sellExecutionContext, settings.TradingPairSymbol)
+	if symbolFilters.TickSize > 0 {
+		targetSellPricePerUnit = roundToIncrement(targetSellPricePerUnit, symbolFilters.TickSize)
+	}
+	sellOrderResponse, sellError := service.BinanceTradingService.PlaceLimitSell(sellExecutionContext, settings.TradingPairSymbol, executedQuantity, targetSellPricePerUnit, symbolFilters)
 
 	buyOrderIdentifier := strconv.FormatInt(buyOrderResponse.OrderID, 10)
 	var sellOrderIdentifier *string

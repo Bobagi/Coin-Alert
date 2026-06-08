@@ -31,6 +31,7 @@ func NewOperationsHandler(sessionService *service.SessionService, cookieName str
 func (handler *OperationsHandler) RegisterRoutes(router *http.ServeMux) {
 	router.HandleFunc("/api/v1/operations", handler.handleOperations)
 	router.HandleFunc("/api/v1/operations/sell", handler.handleSellOperation)
+	router.HandleFunc("/api/v1/operations/place-sell", handler.handlePlaceSell)
 	router.HandleFunc("/api/v1/operations/executions", handler.handleExecutions)
 	router.HandleFunc("/api/v1/binance/open-orders", handler.handleOpenOrders)
 }
@@ -155,6 +156,40 @@ func (handler *OperationsHandler) handleSellOperation(responseWriter http.Respon
 			return
 		}
 		writeJSONError(responseWriter, http.StatusBadRequest, sellError.Error())
+		return
+	}
+	writeJSON(responseWriter, http.StatusOK, toOperationPayload(*operation))
+}
+
+func (handler *OperationsHandler) handlePlaceSell(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	userIdentifier, authenticated := handler.requireUser(responseWriter, request)
+	if !authenticated {
+		return
+	}
+
+	var payload sellRequestPayload
+	if decodeError := json.NewDecoder(request.Body).Decode(&payload); decodeError != nil {
+		writeJSONError(responseWriter, http.StatusBadRequest, "Invalid request body.")
+		return
+	}
+	if payload.OperationID <= 0 {
+		writeJSONError(responseWriter, http.StatusBadRequest, "An operation id is required.")
+		return
+	}
+
+	operationContext, cancel := context.WithTimeout(request.Context(), 25*time.Second)
+	defer cancel()
+	operation, placeError := handler.tradingService.PlaceTakeProfitForOperation(operationContext, userIdentifier, payload.OperationID)
+	if placeError != nil {
+		if errors.Is(placeError, repository.ErrOperationNotFound) {
+			writeJSONError(responseWriter, http.StatusNotFound, "Operation not found.")
+			return
+		}
+		writeJSONError(responseWriter, http.StatusBadRequest, placeError.Error())
 		return
 	}
 	writeJSON(responseWriter, http.StatusOK, toOperationPayload(*operation))

@@ -8,13 +8,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"coin-alert/internal/domain"
 )
+
+// SymbolFilters holds the Binance trading rules we must honor when placing limit orders. A limit
+// price must be a multiple of TickSize and a quantity a multiple of StepSize, otherwise Binance
+// rejects the order with -1013 (PRICE_FILTER / LOT_SIZE).
+type SymbolFilters struct {
+	TickSize         float64
+	StepSize         float64
+	PriceDecimals    int
+	QuantityDecimals int
+}
 
 type BinanceTradingService struct {
 	EnvironmentConfiguration domain.BinanceEnvironmentConfiguration
@@ -106,14 +118,25 @@ func (service *BinanceTradingService) PlaceMarketBuyByQuote(requestContext conte
 	return &parsedResponse, nil
 }
 
-func (service *BinanceTradingService) PlaceLimitSell(requestContext context.Context, tradingPairSymbol string, quantity float64, targetPrice float64) (*binanceOrderResponse, error) {
+func (service *BinanceTradingService) PlaceLimitSell(requestContext context.Context, tradingPairSymbol string, quantity float64, targetPrice float64, filters SymbolFilters) (*binanceOrderResponse, error) {
+	// Snap the price/quantity to the symbol's tick/step so Binance accepts the order. When filters
+	// are unavailable (fetch failed) we fall back to raw formatting rather than mis-round to integers.
+	priceText := formatDecimal(targetPrice)
+	if filters.TickSize > 0 {
+		priceText = formatWithDecimals(roundToIncrement(targetPrice, filters.TickSize), filters.PriceDecimals)
+	}
+	quantityText := formatDecimal(quantity)
+	if filters.StepSize > 0 {
+		quantityText = formatWithDecimals(floorToIncrement(quantity, filters.StepSize), filters.QuantityDecimals)
+	}
+
 	requestParameters := url.Values{}
 	requestParameters.Set("symbol", tradingPairSymbol)
 	requestParameters.Set("side", "SELL")
 	requestParameters.Set("type", "LIMIT")
 	requestParameters.Set("timeInForce", "GTC")
-	requestParameters.Set("quantity", formatDecimal(quantity))
-	requestParameters.Set("price", formatDecimal(targetPrice))
+	requestParameters.Set("quantity", quantityText)
+	requestParameters.Set("price", priceText)
 	requestParameters.Set("timestamp", strconv.FormatInt(time.Now().UnixMilli(), 10))
 
 	signedEndpoint, signingError := service.buildSignedEndpoint("/api/v3/order", requestParameters)
@@ -251,4 +274,82 @@ func signQuery(message string, secret string) string {
 
 func formatDecimal(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+// FetchSymbolFilters reads the PRICE_FILTER tickSize and LOT_SIZE stepSize for one symbol from
+// exchangeInfo. A zero-value result (e.g. on error) makes callers fall back to raw formatting.
+func (service *BinanceTradingService) FetchSymbolFilters(requestContext context.Context, tradingPairSymbol string) (SymbolFilters, error) {
+	endpoint := service.EnvironmentConfiguration.RESTBaseURL + "/api/v3/exchangeInfo?symbol=" + url.QueryEscape(tradingPairSymbol)
+	request, requestError := http.NewRequestWithContext(requestContext, http.MethodGet, endpoint, nil)
+	if requestError != nil {
+		return SymbolFilters{}, requestError
+	}
+
+	response, responseError := service.HTTPClient.Do(request)
+	if responseError != nil {
+		return SymbolFilters{}, responseError
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return SymbolFilters{}, fmt.Errorf("Binance exchangeInfo responded with status %d", response.StatusCode)
+	}
+
+	var payload struct {
+		Symbols []struct {
+			Filters []struct {
+				FilterType string `json:"filterType"`
+				TickSize   string `json:"tickSize"`
+				StepSize   string `json:"stepSize"`
+			} `json:"filters"`
+		} `json:"symbols"`
+	}
+	if decodeError := json.NewDecoder(response.Body).Decode(&payload); decodeError != nil {
+		return SymbolFilters{}, decodeError
+	}
+	if len(payload.Symbols) == 0 {
+		return SymbolFilters{}, fmt.Errorf("Binance returned no filters for %s", tradingPairSymbol)
+	}
+
+	filters := SymbolFilters{}
+	for _, filter := range payload.Symbols[0].Filters {
+		switch filter.FilterType {
+		case "PRICE_FILTER":
+			filters.TickSize, _ = strconv.ParseFloat(filter.TickSize, 64)
+			filters.PriceDecimals = decimalPlaces(filter.TickSize)
+		case "LOT_SIZE":
+			filters.StepSize, _ = strconv.ParseFloat(filter.StepSize, 64)
+			filters.QuantityDecimals = decimalPlaces(filter.StepSize)
+		}
+	}
+	return filters, nil
+}
+
+func roundToIncrement(value float64, increment float64) float64 {
+	if increment <= 0 {
+		return value
+	}
+	return math.Round(value/increment) * increment
+}
+
+func floorToIncrement(value float64, increment float64) float64 {
+	if increment <= 0 {
+		return value
+	}
+	return math.Floor(value/increment) * increment
+}
+
+func formatWithDecimals(value float64, decimals int) string {
+	return strconv.FormatFloat(value, 'f', decimals, 64)
+}
+
+// decimalPlaces returns the number of significant decimal places in a Binance increment string such
+// as "0.01000000" (=> 2) or "0.00001000" (=> 5).
+func decimalPlaces(numberText string) int {
+	numberText = strings.TrimRight(strings.TrimSpace(numberText), "0")
+	dotIndex := strings.IndexByte(numberText, '.')
+	if dotIndex < 0 {
+		return 0
+	}
+	return len(numberText) - dotIndex - 1
 }

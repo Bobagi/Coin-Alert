@@ -94,10 +94,14 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	buyOrderIdentifier := strconv.FormatInt(buyOrderResponse.OrderID, 10)
 	service.logExecution(operationContext, userIdentifier, environmentName, tradingPairSymbol, domain.TradingOperationTypeBuy, purchasePricePerUnit, executedQuantity, purchasePricePerUnit*executedQuantity, true, nil, &buyOrderIdentifier)
 
+	symbolFilters, _ := tradingService.FetchSymbolFilters(operationContext, tradingPairSymbol)
 	targetSellPricePerUnit := purchasePricePerUnit * (1 + (targetProfitPercent / 100))
+	if symbolFilters.TickSize > 0 {
+		targetSellPricePerUnit = roundToIncrement(targetSellPricePerUnit, symbolFilters.TickSize)
+	}
 
 	var sellOrderIdentifier *string
-	sellOrderResponse, sellError := tradingService.PlaceLimitSell(operationContext, tradingPairSymbol, executedQuantity, targetSellPricePerUnit)
+	sellOrderResponse, sellError := tradingService.PlaceLimitSell(operationContext, tradingPairSymbol, executedQuantity, targetSellPricePerUnit, symbolFilters)
 	if sellError != nil {
 		service.logExecution(operationContext, userIdentifier, environmentName, tradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, false, sellError, nil)
 	} else if sellOrderResponse != nil {
@@ -197,6 +201,71 @@ func (service *UserTradingService) finalizeManualSell(operationContext context.C
 	operation.SellPricePerUnit = &fillPrice
 	operation.SellTimestamp = &soldAt
 	return &operation, nil
+}
+
+// PlaceTakeProfitForOperation (re)places the resting take-profit limit sell for an OPEN position
+// whose sell order is missing (e.g. the original attempt failed with a PRICE_FILTER error). It is
+// idempotent: a still-live sell order is left in place, and an already-filled one reconciles to sold.
+func (service *UserTradingService) PlaceTakeProfitForOperation(operationContext context.Context, userIdentifier int64, operationIdentifier int64) (*domain.TradingOperation, error) {
+	operation, lookupError := service.operationRepository.FindOperationByIdForUser(operationContext, userIdentifier, operationIdentifier)
+	if lookupError != nil {
+		return nil, lookupError
+	}
+	if operation.Status != domain.TradingOperationStatusOpen {
+		return nil, errors.New("this operation is already closed")
+	}
+
+	environmentConfiguration, configurationError := service.credentialService.LoadActiveEnvironmentConfiguration(operationContext, userIdentifier)
+	if configurationError != nil {
+		return nil, configurationError
+	}
+	if environmentConfiguration == nil {
+		return nil, errors.New("connect a Binance account first")
+	}
+	environmentName := environmentConfiguration.EnvironmentName
+	if operation.BinanceEnvironment != "" && operation.BinanceEnvironment != environmentName {
+		return nil, fmt.Errorf("switch to the %s environment to manage this position", operation.BinanceEnvironment)
+	}
+	settings, _ := service.settingsRepository.GetByUserAndEnvironment(operationContext, userIdentifier, environmentName)
+	if environmentName == domain.BinanceEnvironmentProduction && (settings == nil || !settings.LiveTradingEnabled) {
+		return nil, errors.New("enable live trading in your settings before placing real-money orders")
+	}
+
+	tradingService := NewBinanceTradingService(*environmentConfiguration)
+
+	// Don't duplicate an existing sell order: leave a live one alone, reconcile a filled one to sold.
+	if operation.SellOrderIdentifier != nil {
+		if orderStatus, statusError := tradingService.GetOrderStatus(operationContext, operation.TradingPairSymbol, *operation.SellOrderIdentifier); statusError == nil && orderStatus != nil {
+			switch orderStatus.Status {
+			case "NEW", "PARTIALLY_FILLED":
+				return operation, nil
+			case "FILLED":
+				filledPrice := fillPriceFromStatus(*orderStatus, operation.PurchasePricePerUnit)
+				return service.finalizeManualSell(operationContext, userIdentifier, environmentName, *operation, filledPrice, operation.SellOrderIdentifier)
+			}
+		}
+	}
+
+	symbolFilters, _ := tradingService.FetchSymbolFilters(operationContext, operation.TradingPairSymbol)
+	targetSellPricePerUnit := operation.PurchasePricePerUnit * (1 + (operation.TargetProfitPercent / 100))
+	if symbolFilters.TickSize > 0 {
+		targetSellPricePerUnit = roundToIncrement(targetSellPricePerUnit, symbolFilters.TickSize)
+	}
+
+	sellOrderResponse, sellError := tradingService.PlaceLimitSell(operationContext, operation.TradingPairSymbol, operation.QuantityPurchased, targetSellPricePerUnit, symbolFilters)
+	if sellError != nil {
+		service.logExecution(operationContext, userIdentifier, environmentName, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, false, sellError, nil)
+		return nil, sellError
+	}
+
+	sellOrderIdentifier := strconv.FormatInt(sellOrderResponse.OrderID, 10)
+	service.logExecution(operationContext, userIdentifier, environmentName, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, true, nil, &sellOrderIdentifier)
+	if updateError := service.operationRepository.UpdateOperationSellOrderForUser(operationContext, userIdentifier, operation.Identifier, sellOrderIdentifier, targetSellPricePerUnit); updateError != nil {
+		return nil, updateError
+	}
+	operation.SellOrderIdentifier = &sellOrderIdentifier
+	operation.SellTargetPricePerUnit = &targetSellPricePerUnit
+	return operation, nil
 }
 
 func (service *UserTradingService) ListOperations(loadContext context.Context, userIdentifier int64, limit int) ([]domain.TradingOperation, error) {

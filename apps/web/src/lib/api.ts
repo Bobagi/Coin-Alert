@@ -117,6 +117,8 @@ export const api = {
   getExecutions: () => request<Execution[]>('GET', '/api/v1/operations/executions'),
   sellOperation: (operationId: number) =>
     request<Operation>('POST', '/api/v1/operations/sell', { operation_id: operationId }),
+  placeSellOrder: (operationId: number) =>
+    request<Operation>('POST', '/api/v1/operations/place-sell', { operation_id: operationId }),
   buy: (symbol: string, quoteAmount: number, targetProfitPercent: number) =>
     request<Operation>('POST', '/api/v1/operations', {
       symbol,

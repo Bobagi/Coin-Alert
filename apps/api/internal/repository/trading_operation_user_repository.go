@@ -22,6 +22,7 @@ type UserTradingOperationRepository interface {
 	ListOpenOperationsForUser(loadContext context.Context, userIdentifier int64, environment string) ([]domain.TradingOperation, error)
 	FindOperationByIdForUser(loadContext context.Context, userIdentifier int64, operationIdentifier int64) (*domain.TradingOperation, error)
 	UpdateOperationAsSoldForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellPricePerUnit float64) error
+	UpdateOperationSellOrderForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellOrderIdentifier string, sellTargetPrice float64) error
 	CalculateOpenAllocationTotalForUser(loadContext context.Context, userIdentifier int64, environment string) (float64, error)
 }
 
@@ -101,6 +102,15 @@ func (repository *PostgresTradingOperationRepository) UpdateOperationAsSoldForUs
 		operationContext,
 		`UPDATE trading_operations SET status = $1, sell_price_per_unit = $2, sold_at = NOW() WHERE id = $3 AND user_id = $4`,
 		domain.TradingOperationStatusSold, sellPricePerUnit, operationIdentifier, userIdentifier,
+	)
+	return updateError
+}
+
+func (repository *PostgresTradingOperationRepository) UpdateOperationSellOrderForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellOrderIdentifier string, sellTargetPrice float64) error {
+	_, updateError := repository.Database.ExecContext(
+		operationContext,
+		`UPDATE trading_operations SET sell_order_id = $1, sell_target_price_per_unit = $2 WHERE id = $3 AND user_id = $4`,
+		sellOrderIdentifier, sellTargetPrice, operationIdentifier, userIdentifier,
 	)
 	return updateError
 }

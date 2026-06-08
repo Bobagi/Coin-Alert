@@ -212,7 +212,13 @@ const en: Dictionary = {
   'hist.price': 'Price',
   'hist.qty': 'Qty',
   'hist.total': 'Total',
-  'hist.result': 'Result'
+  'hist.result': 'Result',
+  'ops.sellOrder': 'Sell order',
+  'ops.sellOrderOk': 'Take-profit sell order is active on the exchange.',
+  'ops.noSellOrder': 'No take-profit sell order — it was not created. Use “Create sell order”.',
+  'ops.retrySell': 'Create sell order',
+  'ops.retrying': 'Creating…',
+  'ops.sellPlaced': 'Take-profit sell order created.'
 }
 
 const pt: Dictionary = {
@@ -385,7 +391,13 @@ const pt: Dictionary = {
   'hist.price': 'Preço',
   'hist.qty': 'Qtd',
   'hist.total': 'Total',
-  'hist.result': 'Resultado'
+  'hist.result': 'Resultado',
+  'ops.sellOrder': 'Ordem de venda',
+  'ops.sellOrderOk': 'A ordem de venda (take-profit) está ativa na corretora.',
+  'ops.noSellOrder': 'Sem ordem de venda (take-profit) — não foi criada. Use “Criar ordem de venda”.',
+  'ops.retrySell': 'Criar ordem de venda',
+  'ops.retrying': 'Criando…',
+  'ops.sellPlaced': 'Ordem de venda (take-profit) criada.'
 }
 
 const es: Dictionary = {
@@ -558,7 +570,13 @@ const es: Dictionary = {
   'hist.price': 'Precio',
   'hist.qty': 'Cant.',
   'hist.total': 'Total',
-  'hist.result': 'Resultado'
+  'hist.result': 'Resultado',
+  'ops.sellOrder': 'Orden de venta',
+  'ops.sellOrderOk': 'La orden de venta (take-profit) está activa en el exchange.',
+  'ops.noSellOrder': 'Sin orden de venta (take-profit) — no se creó. Usa “Crear orden de venta”.',
+  'ops.retrySell': 'Crear orden de venta',
+  'ops.retrying': 'Creando…',
+  'ops.sellPlaced': 'Orden de venta (take-profit) creada.'
 }
 
 const dictionaries: Record<Locale, Dictionary> = { en, pt, es }

@@ -50,6 +50,7 @@
   let tradeBusy = false
 
   let sellBusyId: number | null = null
+  let placeSellBusyId: number | null = null
   let opsMsg = ''
   let opsErr = ''
 
@@ -256,6 +257,23 @@
       opsErr = (e as Error).message
     } finally {
       sellBusyId = null
+    }
+  }
+
+  // Retry placing the take-profit sell order for a position whose original sell failed.
+  async function placeSell(operationId: number) {
+    placeSellBusyId = operationId
+    opsMsg = ''
+    opsErr = ''
+    try {
+      await api.placeSellOrder(operationId)
+      opsMsg = $t('ops.sellPlaced')
+      operations = await api.getOperations()
+      loadExecutions()
+    } catch (e) {
+      opsErr = (e as Error).message
+    } finally {
+      placeSellBusyId = null
     }
   }
 
@@ -478,6 +496,7 @@
               <div>{$t('ops.qty')}</div>
               <div>{$t('ops.buyPrice')}</div>
               <div>{$t('ops.target')}</div>
+              <div>{$t('ops.sellOrder')}</div>
               <div>{$t('ops.purchased')}</div>
               <div class="col-actions">{$t('ops.actions')}</div>
             </div>
@@ -488,9 +507,23 @@
                 <div>{fmt(operation.quantity)}</div>
                 <div>{fmt(operation.purchase_price_per_unit)}</div>
                 <div>{fmt(operation.sell_target_price_per_unit)}</div>
+                <div>
+                  {#if operation.sell_order_id}
+                    <span class="badge green" title={$t('ops.sellOrderOk')}>✓</span>
+                  {:else if operation.status === 'OPEN'}
+                    <span class="badge red" title={$t('ops.noSellOrder')}>⚠</span>
+                  {:else}
+                    <span class="muted">—</span>
+                  {/if}
+                </div>
                 <div class="muted">{new Date(operation.purchased_at).toLocaleString()}</div>
-                <div class="col-actions">
+                <div class="col-actions ops-actions">
                   {#if operation.status === 'OPEN'}
+                    {#if !operation.sell_order_id}
+                      <button class="btn-sm" disabled={placeSellBusyId === operation.id} on:click={() => placeSell(operation.id)}>
+                        {placeSellBusyId === operation.id ? $t('ops.retrying') : $t('ops.retrySell')}
+                      </button>
+                    {/if}
                     <button class="danger btn-sm" disabled={sellBusyId === operation.id} on:click={() => sellNow(operation.id)}>
                       {sellBusyId === operation.id ? $t('ops.selling') : $t('ops.sellNow')}
                     </button>
@@ -581,8 +614,9 @@
   .subtab.active { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
 
   .table { display: flex; flex-direction: column; overflow-x: auto; }
-  .trow { display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr 1.2fr 1.6fr 110px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 720px; }
+  .trow { display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr 1.2fr 0.8fr 1.6fr 140px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 840px; }
   .hrow { display: grid; grid-template-columns: 1.7fr 0.9fr 1fr 1.1fr 1fr 1.1fr 80px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 720px; }
   .thead { color: var(--muted); font-weight: 700; font-size: var(--text-xs); }
   .col-actions { text-align: right; }
+  .ops-actions { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-end; }
 </style>

@@ -179,7 +179,7 @@ func (server *Server) handlePurchaseRequest(responseWriter http.ResponseWriter, 
 	sellExecutionContext, sellCancel := context.WithTimeout(request.Context(), 10*time.Second)
 	defer sellCancel()
 
-	sellOrderResponse, sellError := server.BinanceTradingService.PlaceLimitSell(sellExecutionContext, request.FormValue("trading_pair_symbol"), executedQuantity, targetSellPricePerUnit)
+	sellOrderResponse, sellError := server.BinanceTradingService.PlaceLimitSell(sellExecutionContext, request.FormValue("trading_pair_symbol"), executedQuantity, targetSellPricePerUnit, service.SymbolFilters{})
 	if sellError != nil {
 		server.logExecutionFailure(request.Context(), domain.TradingOperationTypeSell, request.FormValue("trading_pair_symbol"), sellError)
 		log.Printf("Sell order placement failed for %s: %v", request.FormValue("trading_pair_symbol"), sellError)
@@ -897,7 +897,7 @@ func (server *Server) triggerReinvestmentAfterSale(requestContext context.Contex
         targetSellPricePerUnit := purchaseUnitPrice * (1 + (targetProfitPercent / 100))
 
         sellContext, sellCancel := context.WithTimeout(requestContext, 10*time.Second)
-        sellResponse, sellError := server.BinanceTradingService.PlaceLimitSell(sellContext, tradingPairSymbol, executedQuantity, targetSellPricePerUnit)
+        sellResponse, sellError := server.BinanceTradingService.PlaceLimitSell(sellContext, tradingPairSymbol, executedQuantity, targetSellPricePerUnit, service.SymbolFilters{})
         sellCancel()
         if sellError != nil {
                 server.logExecutionFailure(requestContext, domain.TradingOperationTypeSell, tradingPairSymbol, sellError)
