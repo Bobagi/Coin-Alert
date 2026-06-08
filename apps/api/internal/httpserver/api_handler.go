@@ -42,6 +42,7 @@ func (handler *APIHandler) RegisterRoutes(router *http.ServeMux) {
 	router.HandleFunc("/api/v1/binance/price", handler.handlePrice)
 	router.HandleFunc("/api/v1/binance/symbols", handler.handleSymbols)
 	router.HandleFunc("/api/v1/binance/symbol-filters", handler.handleSymbolFilters)
+	router.HandleFunc("/api/v1/binance/klines", handler.handleKlines)
 }
 
 func (handler *APIHandler) requireUser(responseWriter http.ResponseWriter, request *http.Request) (int64, bool) {
@@ -293,6 +294,55 @@ func (handler *APIHandler) handleSymbolFilters(responseWriter http.ResponseWrite
 		"tick_size":    filters.TickSize,
 		"step_size":    filters.StepSize,
 	})
+}
+
+// handleKlines returns the close-price series for a pair over a named period, used to draw the
+// allocation history chart.
+func (handler *APIHandler) handleKlines(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	userIdentifier, authenticated := handler.requireUser(responseWriter, request)
+	if !authenticated {
+		return
+	}
+
+	tradingPairSymbol := strings.ToUpper(strings.TrimSpace(request.URL.Query().Get("symbol")))
+	if tradingPairSymbol == "" {
+		writeJSONError(responseWriter, http.StatusBadRequest, "Missing symbol parameter.")
+		return
+	}
+	period := strings.TrimSpace(request.URL.Query().Get("period"))
+	interval, limit := klineParametersForPeriod(period)
+
+	priceService := service.NewBinancePriceService(handler.resolveEnvironmentConfiguration(request.Context(), userIdentifier))
+	operationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+	points, seriesError := priceService.FetchCloseSeries(operationContext, tradingPairSymbol, interval, limit)
+	if seriesError != nil {
+		writeJSONError(responseWriter, http.StatusBadGateway, "Could not load price history for this pair.")
+		return
+	}
+	writeJSON(responseWriter, http.StatusOK, map[string]interface{}{
+		"symbol": tradingPairSymbol,
+		"period": period,
+		"points": points,
+	})
+}
+
+// klineParametersForPeriod maps a UI period to a Binance kline interval + point count.
+func klineParametersForPeriod(period string) (string, int) {
+	switch period {
+	case "7d":
+		return "4h", 42
+	case "1M":
+		return "1d", 30
+	case "3M":
+		return "1d", 90
+	default: // 24h
+		return "1h", 24
+	}
 }
 
 // resolveEnvironmentConfiguration returns the user's active environment (for the correct base URL),

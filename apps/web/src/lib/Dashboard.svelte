@@ -3,7 +3,7 @@
   import { api, type TradingSettings, type CredentialStatus, type Operation, type Execution } from './api'
   import { binanceStatus } from './stores'
   import { t, locale } from './i18n'
-  import AllocationChart from './AllocationChart.svelte'
+  import AllocationPanel from './AllocationPanel.svelte'
   import PortfolioPanel from './PortfolioPanel.svelte'
   import LegalFooter from './LegalFooter.svelte'
   import SymbolAutocomplete from './SymbolAutocomplete.svelte'
@@ -475,11 +475,7 @@
         <span class="card-title">{$t('alloc.title')}</span>
       </div>
       <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('alloc.help')}</p></details>
-      {#if operations.some((operation) => operation.status === 'OPEN')}
-        <AllocationChart {operations} />
-      {:else}
-        <p class="muted mt-3">{$t('alloc.none')}</p>
-      {/if}
+      <AllocationPanel {operations} />
     </section>
 
     <section class="card">

@@ -117,6 +117,11 @@ export const api = {
       'GET',
       `/api/v1/binance/symbol-filters?symbol=${encodeURIComponent(symbol)}`
     ),
+  getKlines: (symbol: string, period: string) =>
+    request<{ symbol: string; period: string; points: { t: number; close: number }[] }>(
+      'GET',
+      `/api/v1/binance/klines?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}`
+    ),
 
   getOperations: () => request<Operation[]>('GET', '/api/v1/operations'),
   getExecutions: () => request<Execution[]>('GET', '/api/v1/operations/executions'),
