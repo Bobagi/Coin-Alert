@@ -112,6 +112,11 @@ export const api = {
   getPrice: (symbol: string) =>
     request<{ symbol: string; price: number }>('GET', `/api/v1/binance/price?symbol=${encodeURIComponent(symbol)}`),
   getSymbols: () => request<{ symbols: string[] }>('GET', '/api/v1/binance/symbols'),
+  getSymbolFilters: (symbol: string) =>
+    request<{ symbol: string; min_notional: number; tick_size: number; step_size: number }>(
+      'GET',
+      `/api/v1/binance/symbol-filters?symbol=${encodeURIComponent(symbol)}`
+    ),
 
   getOperations: () => request<Operation[]>('GET', '/api/v1/operations'),
   getExecutions: () => request<Execution[]>('GET', '/api/v1/operations/executions'),

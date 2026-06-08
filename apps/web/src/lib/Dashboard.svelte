@@ -45,6 +45,7 @@
   let tradeAmount = 15
   let tradeTarget = 1.5
   let tradePrice: number | null = null
+  let tradeFilters: { min_notional: number; tick_size: number; step_size: number } | null = null
   let tradeMsg = ''
   let tradeErr = ''
   let tradeBusy = false
@@ -221,7 +222,14 @@
       tradeErr = (e as Error).message
       tradePrice = null
     }
+    try {
+      tradeFilters = await api.getSymbolFilters(tradeSymbol)
+    } catch {
+      tradeFilters = null
+    }
   }
+
+  $: belowMinimum = !!tradeFilters && tradeFilters.min_notional > 0 && tradeAmount < tradeFilters.min_notional
 
   async function buy() {
     tradeBusy = true
@@ -279,6 +287,7 @@
 
   onMount(async () => {
     await loadAll()
+    checkPrice()
     loadSymbols()
     loadExecutions()
   })
@@ -376,12 +385,16 @@
         <div class="field">
           <label for="trade-amount">{$t('buy.amount')}</label>
           <input id="trade-amount" type="number" bind:value={tradeAmount} min="0" step="0.01" />
+          {#if tradeFilters && tradeFilters.min_notional > 0}
+            <span class="muted">{$t('buy.minOrder', { min: fmt(tradeFilters.min_notional) })}</span>
+          {/if}
+          {#if belowMinimum && tradeFilters}<span class="error">{$t('buy.belowMin', { min: fmt(tradeFilters.min_notional) })}</span>{/if}
         </div>
         <div class="field">
           <label for="trade-target">{$t('buy.target')}</label>
           <input id="trade-target" type="number" bind:value={tradeTarget} min="0" step="0.01" />
         </div>
-        <button class="btn-block mt-5" disabled={tradeBusy} on:click={buy}>
+        <button class="btn-block mt-5" disabled={tradeBusy || belowMinimum} on:click={buy}>
           {tradeBusy ? $t('buy.placing') : $t('buy.button')}
         </button>
         {#if tradeMsg}<p class="success mt-3">{tradeMsg}</p>{/if}

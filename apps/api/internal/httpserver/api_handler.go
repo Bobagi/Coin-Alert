@@ -41,6 +41,7 @@ func (handler *APIHandler) RegisterRoutes(router *http.ServeMux) {
 	router.HandleFunc("/api/v1/binance/credentials/activate", handler.handleActivateEnvironment)
 	router.HandleFunc("/api/v1/binance/price", handler.handlePrice)
 	router.HandleFunc("/api/v1/binance/symbols", handler.handleSymbols)
+	router.HandleFunc("/api/v1/binance/symbol-filters", handler.handleSymbolFilters)
 }
 
 func (handler *APIHandler) requireUser(responseWriter http.ResponseWriter, request *http.Request) (int64, bool) {
@@ -258,6 +259,40 @@ func (handler *APIHandler) handleSymbols(responseWriter http.ResponseWriter, req
 		return
 	}
 	writeJSON(responseWriter, http.StatusOK, map[string]interface{}{"symbols": availableSymbols})
+}
+
+// handleSymbolFilters returns the pair's trading rules (minimum order value, price/quantity steps) so
+// the UI can show them and validate an order before placing it.
+func (handler *APIHandler) handleSymbolFilters(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	userIdentifier, authenticated := handler.requireUser(responseWriter, request)
+	if !authenticated {
+		return
+	}
+
+	tradingPairSymbol := strings.ToUpper(strings.TrimSpace(request.URL.Query().Get("symbol")))
+	if tradingPairSymbol == "" {
+		writeJSONError(responseWriter, http.StatusBadRequest, "Missing symbol parameter.")
+		return
+	}
+
+	tradingService := service.NewBinanceTradingService(handler.resolveEnvironmentConfiguration(request.Context(), userIdentifier))
+	operationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+	filters, filtersError := tradingService.FetchSymbolFilters(operationContext, tradingPairSymbol)
+	if filtersError != nil {
+		writeJSONError(responseWriter, http.StatusBadGateway, "Could not load the trading rules for this pair.")
+		return
+	}
+	writeJSON(responseWriter, http.StatusOK, map[string]interface{}{
+		"symbol":       tradingPairSymbol,
+		"min_notional": filters.MinNotional,
+		"tick_size":    filters.TickSize,
+		"step_size":    filters.StepSize,
+	})
 }
 
 // resolveEnvironmentConfiguration returns the user's active environment (for the correct base URL),

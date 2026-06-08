@@ -65,6 +65,13 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	tradingService := NewBinanceTradingService(*environmentConfiguration)
 	priceService := NewBinancePriceService(*environmentConfiguration)
 
+	// Check the order value against the pair's minimum BEFORE buying, so the user gets a clear
+	// message instead of a raw Binance -1013 NOTIONAL rejection.
+	symbolFilters, _ := tradingService.FetchSymbolFilters(operationContext, tradingPairSymbol)
+	if symbolFilters.MinNotional > 0 && quoteAmount < symbolFilters.MinNotional {
+		return nil, fmt.Errorf("the minimum order value for %s is %s — you entered %s", tradingPairSymbol, formatDecimal(symbolFilters.MinNotional), formatDecimal(quoteAmount))
+	}
+
 	currentPricePerUnit, priceError := priceService.GetCurrentPrice(operationContext, tradingPairSymbol)
 	if priceError != nil {
 		return nil, fmt.Errorf("could not fetch the current price: %w", priceError)
@@ -94,7 +101,6 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	buyOrderIdentifier := strconv.FormatInt(buyOrderResponse.OrderID, 10)
 	service.logExecution(operationContext, userIdentifier, environmentName, tradingPairSymbol, domain.TradingOperationTypeBuy, purchasePricePerUnit, executedQuantity, purchasePricePerUnit*executedQuantity, true, nil, &buyOrderIdentifier)
 
-	symbolFilters, _ := tradingService.FetchSymbolFilters(operationContext, tradingPairSymbol)
 	targetSellPricePerUnit := purchasePricePerUnit * (1 + (targetProfitPercent / 100))
 	if symbolFilters.TickSize > 0 {
 		targetSellPricePerUnit = roundToIncrement(targetSellPricePerUnit, symbolFilters.TickSize)
