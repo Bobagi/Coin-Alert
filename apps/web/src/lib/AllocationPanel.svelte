@@ -167,14 +167,21 @@
             fill: true,
             tension: 0.25,
             pointRadius: values.map((_, index) => (index === lastIndex ? 3.5 : 0)),
+            pointHoverRadius: values.map((_, index) => (index === lastIndex ? 3.5 : 0)),
+            pointHitRadius: 24,
             pointBackgroundColor: '#ffd43b'
           }
         ]
       },
       options: {
         maintainAspectRatio: false,
+        // Show the tooltip for the nearest point on the x-axis without needing the cursor exactly on
+        // the line — much easier to hover, with no change to how the chart looks.
+        interaction: { mode: 'index', intersect: false },
         plugins: {
           tooltip: {
+            mode: 'index',
+            intersect: false,
             callbacks: {
               label: (context) => ' ' + formatMoney(Number(context.parsed.y), selectedHolding ? selectedHolding.quote : '')
             }
