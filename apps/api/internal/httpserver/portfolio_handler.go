@@ -76,9 +76,16 @@ func (handler *PortfolioHandler) handleSource(responseWriter http.ResponseWriter
 			writeJSONError(responseWriter, http.StatusBadRequest, "Invalid request body.")
 			return
 		}
+		trimmedWalletURL := strings.TrimSpace(payload.WalletURL)
+		// An empty value clears the source; otherwise it must point at Investidor10. This stops the
+		// scraper from being pointed at internal/cloud-metadata hosts (SSRF) via the wallet URL.
+		if trimmedWalletURL != "" && !isAllowedWalletURL(trimmedWalletURL) {
+			writeJSONError(responseWriter, http.StatusBadRequest, "Enter a valid Investidor10 wallet URL (e.g. https://investidor10.com.br/carteiras/...).")
+			return
+		}
 		operationContext, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 		defer cancel()
-		if saveError := handler.portfolioRepository.UpsertWalletURL(operationContext, userIdentifier, strings.TrimSpace(payload.WalletURL)); saveError != nil {
+		if saveError := handler.portfolioRepository.UpsertWalletURL(operationContext, userIdentifier, trimmedWalletURL); saveError != nil {
 			writeJSONError(responseWriter, http.StatusInternalServerError, "Could not save portfolio source.")
 			return
 		}
@@ -119,6 +126,11 @@ func (handler *PortfolioHandler) proxyScrape(responseWriter http.ResponseWriter,
 		writeJSONError(responseWriter, http.StatusBadRequest, "Set your Investidor10 wallet URL first.")
 		return
 	}
+	// Defense in depth: reject anything that is not an Investidor10 URL before the scraper fetches it.
+	if !isAllowedWalletURL(walletURL) {
+		writeJSONError(responseWriter, http.StatusBadRequest, "Your saved wallet URL is not a valid Investidor10 address. Please update it.")
+		return
+	}
 
 	query := url.Values{"wallet_url": []string{walletURL}}
 	for key, values := range extraQuery {
@@ -138,4 +150,22 @@ func (handler *PortfolioHandler) proxyScrape(responseWriter http.ResponseWriter,
 	responseWriter.Header().Set("Content-Type", "application/json")
 	responseWriter.WriteHeader(statusCode)
 	_, _ = responseWriter.Write(responseBody)
+}
+
+// investidor10Host is the only host the portfolio scraper is allowed to be pointed at.
+const investidor10Host = "investidor10.com.br"
+
+// isAllowedWalletURL reports whether rawWalletURL is a plain http(s) URL on investidor10.com.br
+// (or a subdomain). The scraper fetches this URL server-side, so restricting it to the expected
+// host prevents the wallet URL from being abused for SSRF against internal or metadata endpoints.
+func isAllowedWalletURL(rawWalletURL string) bool {
+	parsedURL, parseError := url.Parse(strings.TrimSpace(rawWalletURL))
+	if parseError != nil {
+		return false
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(parsedURL.Hostname())
+	return host == investidor10Host || strings.HasSuffix(host, "."+investidor10Host)
 }

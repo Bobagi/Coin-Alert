@@ -87,6 +87,7 @@ func main() {
 	defer cancel()
 
 	automationWorker.Start(applicationContext)
+	sessionService.StartExpiredSessionCleanup(applicationContext, time.Hour)
 
 	serverAddress := ":" + applicationConfiguration.ServerPort
 	httpServer := &http.Server{Addr: serverAddress, Handler: rootRouter}

@@ -10,6 +10,5 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /bin/coin-alert ./cmd/serv
 FROM gcr.io/distroless/base-debian12
 WORKDIR /app
 COPY --from=builder /bin/coin-alert /bin/coin-alert
-COPY templates ./templates
 EXPOSE 5020
 ENTRYPOINT ["/bin/coin-alert"]

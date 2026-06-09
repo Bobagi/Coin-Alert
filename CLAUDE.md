@@ -37,8 +37,9 @@ docker-compose.yml   db + migrate + api (+ scraper under the `scraper` profile).
   `PortfolioScraperClient`.
 - `httpserver` — JSON handlers: `auth_handler` (email + Google OAuth), `account_handler`
   (profile/password/delete), `api_handler` (settings/credentials/price/symbols),
-  `operations_handler`, `portfolio_handler`. `server.go` is **legacy single-user dead code** (not
-  wired; delete when convenient). Google OAuth lives in `service/google_oauth_service.go` (stdlib
+  `operations_handler`, `portfolio_handler`. (The legacy single-user `server.go` + HTML `templates/`
+  were removed in the 2026-06 hardening pass; the legacy single-user *services* it used remain but
+  are unwired/dead.) Google OAuth lives in `service/google_oauth_service.go` (stdlib
   only, no extra module); it is **config-driven** — unset `GOOGLE_OAUTH_*` ⇒ feature off & button hidden.
 
 ## API surface (cookie-authenticated except signup/login/providers and the Google redirect flow)
@@ -115,8 +116,9 @@ history via `/binance/klines`), an **operations history sub-tab** (executions, f
 explanations, gold theme, favicon, i18n; portfolio scraper integration. Pending/optional: per-user email price alerts (table
 exists, route not rebuilt); more
 chart types (PnL/price/dividend calendar); WebSocket fills/price (today 30s polling; take-profit is
-already a resting limit order at exchange speed); delete legacy `server.go` + templates; decommission
-the old standalone `investidor10` container (:3054), now redundant.
+already a resting limit order at exchange speed); remove the now-unwired legacy single-user *services*
+(`server.go` + `templates/` already deleted); decommission the old standalone `investidor10` container
+(:3054), now redundant.
 
 ## Don't print secrets
 `.env`, `/root/commands_band_share.txt`, and any API keys. Never echo/commit them.

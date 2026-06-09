@@ -122,7 +122,10 @@ celerybeat.pid
 *.sage.py
 
 # Environments
+# Never commit real env files (they hold secrets); keep only the *.example templates.
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
