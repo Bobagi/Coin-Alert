@@ -163,7 +163,7 @@ func (worker *AutomationWorker) processOpenOperation(applicationContext context.
 
 	sellResponse, sellError := tradingService.PlaceMarketSellByQuantity(applicationContext, operation.TradingPairSymbol, operation.QuantityPurchased)
 	if sellError != nil {
-		worker.logSellExecution(applicationContext, userIdentifier, operation.BinanceEnvironment, operation.TradingPairSymbol, currentPrice, operation.QuantityPurchased, false, sellError, nil)
+		worker.logSellExecution(applicationContext, userIdentifier, operation.BinanceEnvironment, domain.ExecutionInitiatorBot, operation.TradingPairSymbol, currentPrice, operation.QuantityPurchased, false, sellError, nil)
 		log.Printf("automation: stop-loss market sell failed for operation %d (user %d): %v", operation.Identifier, userIdentifier, sellError)
 		return
 	}
@@ -175,11 +175,11 @@ func (worker *AutomationWorker) markOperationSold(applicationContext context.Con
 		log.Printf("automation: could not mark operation %d sold (user %d): %v", operation.Identifier, userIdentifier, updateError)
 		return
 	}
-	worker.logSellExecution(applicationContext, userIdentifier, operation.BinanceEnvironment, operation.TradingPairSymbol, fillPrice, operation.QuantityPurchased, true, nil, operation.SellOrderIdentifier)
+	worker.logSellExecution(applicationContext, userIdentifier, operation.BinanceEnvironment, domain.ExecutionInitiatorBot, operation.TradingPairSymbol, fillPrice, operation.QuantityPurchased, true, nil, operation.SellOrderIdentifier)
 	log.Printf("automation: closed operation %d (user %d) via %s at %.8f", operation.Identifier, userIdentifier, reason, fillPrice)
 }
 
-func (worker *AutomationWorker) logSellExecution(applicationContext context.Context, userIdentifier int64, environment string, tradingPairSymbol string, unitPrice float64, quantity float64, success bool, cause error, orderIdentifier *string) {
+func (worker *AutomationWorker) logSellExecution(applicationContext context.Context, userIdentifier int64, environment string, initiatedBy string, tradingPairSymbol string, unitPrice float64, quantity float64, success bool, cause error, orderIdentifier *string) {
 	var errorMessage *string
 	if cause != nil {
 		message := cause.Error()
@@ -189,6 +189,7 @@ func (worker *AutomationWorker) logSellExecution(applicationContext context.Cont
 		TradingPairSymbol:  tradingPairSymbol,
 		OperationType:      domain.TradingOperationTypeSell,
 		BinanceEnvironment: environment,
+		InitiatedBy:        initiatedBy,
 		UnitPrice:          unitPrice,
 		Quantity:           quantity,
 		TotalValue:         unitPrice * quantity,

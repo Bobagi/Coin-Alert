@@ -492,6 +492,7 @@
           <summary>{$t('ops.statusHelp')}</summary>
           <p>{$t('ops.openMeaning')}</p>
           <p>{$t('ops.soldMeaning')}</p>
+          <p>{$t('ops.sellOrderMeaning')}</p>
         </details>
         {#if opsMsg}<p class="success mt-3">{opsMsg}</p>{/if}
         {#if opsErr}<p class="error mt-3">{opsErr}</p>{/if}
@@ -516,9 +517,10 @@
                 <div>{fmt(operation.quantity)}</div>
                 <div>{fmt(operation.purchase_price_per_unit)}</div>
                 <div>{fmt(operation.sell_target_price_per_unit)}</div>
-                <div>
+                <div class="sell-cell">
                   {#if operation.sell_order_id}
-                    <span class="badge green" title={$t('ops.sellOrderOk')}>✓</span>
+                    <span class="badge green" title={$t('ops.gtcHelp')}>✓</span>
+                    <span class="muted gtc" title={$t('ops.gtcHelp')}>{$t('ops.gtc')}</span>
                   {:else if operation.status === 'OPEN'}
                     <span class="badge red" title={$t('ops.noSellOrder')}>⚠</span>
                   {:else}
@@ -552,6 +554,7 @@
             <div class="hrow thead">
               <div>{$t('hist.when')}</div>
               <div>{$t('hist.action')}</div>
+              <div>{$t('hist.by')}</div>
               <div>{$t('ops.pair')}</div>
               <div>{$t('hist.price')}</div>
               <div>{$t('hist.qty')}</div>
@@ -562,6 +565,7 @@
               <div class="hrow">
                 <div class="muted">{new Date(execution.executed_at).toLocaleString()}</div>
                 <div><span class="badge {execution.operation_type === 'SELL' ? 'green' : 'amber'}">{execution.operation_type}</span></div>
+                <div><span class="by-badge {execution.initiated_by === 'BOT' ? 'bot' : 'user'}">{execution.initiated_by === 'BOT' ? $t('hist.bot') : $t('hist.you')}</span></div>
                 <div>{execution.symbol}</div>
                 <div>{fmt(execution.unit_price)}</div>
                 <div>{fmt(execution.quantity)}</div>
@@ -623,9 +627,14 @@
   .subtab.active { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
 
   .table { display: flex; flex-direction: column; overflow-x: auto; }
-  .trow { display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr 1.2fr 0.8fr 1.6fr 140px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 840px; }
-  .hrow { display: grid; grid-template-columns: 1.7fr 0.9fr 1fr 1.1fr 1fr 1.1fr 80px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 720px; }
+  .trow { display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr 1.2fr 1.3fr 1.4fr 140px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 900px; }
+  .hrow { display: grid; grid-template-columns: 1.6fr 0.9fr 0.8fr 0.9fr 1fr 0.9fr 1fr 70px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 820px; }
   .thead { color: var(--muted); font-weight: 700; font-size: var(--text-xs); }
   .col-actions { text-align: right; }
   .ops-actions { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-end; }
+  .sell-cell { display: flex; align-items: center; gap: var(--space-2); }
+  .sell-cell .gtc { font-size: var(--text-xs); }
+  .by-badge { padding: 2px var(--space-2); border-radius: var(--radius-pill); font-weight: 700; font-size: var(--text-xs); white-space: nowrap; }
+  .by-badge.bot { background: rgba(151, 117, 250, 0.18); color: #b197fc; }
+  .by-badge.user { background: rgba(77, 171, 247, 0.18); color: #74c0fc; }
 </style>

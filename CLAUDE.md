@@ -105,7 +105,8 @@ autocomplete** (`SymbolAutocomplete`, via `/binance/symbols`), a **bot-status pa
 button + **local-timezone** daily-buy picker, a rich **`AllocationPanel`** (wallet donut by current
 value + total + legend on the left; selected-coin header with period change badge, value, a
 price-history line chart, 24h/7d/1M/3M tabs and coin pills on the right — holdings × current price,
-history via `/binance/klines`), an **operations history sub-tab** (executions, for auditing), a **non-custodial disclaimer/ToS** (`LegalFooter`),
+history via `/binance/klines`), an **operations history sub-tab** (executions, for auditing — with a **By** column showing who acted,
+`initiated_by` USER/BOT, migration 0012; the take-profit is GTC/no-expiry, shown in the Sell-order column), a **non-custodial disclaimer/ToS** (`LegalFooter`),
 explanations, gold theme, favicon, i18n; portfolio scraper integration. Pending/optional: per-user email price alerts (table
 exists, route not rebuilt); more
 chart types (PnL/price/dividend calendar); WebSocket fills/price (today 30s polling; take-profit is

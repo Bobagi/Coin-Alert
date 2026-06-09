@@ -8,6 +8,7 @@ type TradingOperationExecution struct {
 	TradingPairSymbol    string
 	OperationType        string
 	BinanceEnvironment   string // the environment (TESTNET/PRODUCTION) this execution happened in
+	InitiatedBy          string // who triggered it: ExecutionInitiatorUser or ExecutionInitiatorBot
 	UnitPrice            float64
 	Quantity             float64
 	TotalValue           float64
@@ -23,4 +24,10 @@ const (
 	TradingOperationTypeBuy      = "BUY"
 	TradingOperationTypeSell     = "SELL"
 	TradingOperationTypeDailyBuy = "DAILY_BUY"
+)
+
+// Who triggered an execution.
+const (
+	ExecutionInitiatorUser = "USER"
+	ExecutionInitiatorBot  = "BOT"
 )

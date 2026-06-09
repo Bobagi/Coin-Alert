@@ -9,7 +9,7 @@ import (
 
 const userExecutionColumns = `id, scheduled_operation_id, trading_pair_symbol, operation_type, unit_price,
 	quantity, total_value, executed_at, success, error_message, order_id, created_at, updated_at,
-	COALESCE(binance_environment, '')`
+	COALESCE(binance_environment, ''), COALESCE(initiated_by, '')`
 
 // UserTradingOperationExecutionRepository persists execution attempts scoped to a single user AND environment.
 type UserTradingOperationExecutionRepository interface {
@@ -21,8 +21,8 @@ func (repository *PostgresTradingOperationExecutionRepository) LogExecutionForUs
 	row := repository.Database.QueryRowContext(
 		operationContext,
 		`INSERT INTO trading_operation_executions
-		    (user_id, scheduled_operation_id, trading_pair_symbol, operation_type, unit_price, quantity, total_value, executed_at, success, error_message, order_id, binance_environment)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		    (user_id, scheduled_operation_id, trading_pair_symbol, operation_type, unit_price, quantity, total_value, executed_at, success, error_message, order_id, binance_environment, initiated_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		 RETURNING id`,
 		userIdentifier,
 		execution.ScheduledOperationID,
@@ -36,6 +36,7 @@ func (repository *PostgresTradingOperationExecutionRepository) LogExecutionForUs
 		execution.ErrorMessage,
 		execution.OrderIdentifier,
 		execution.BinanceEnvironment,
+		execution.InitiatedBy,
 	)
 	var executionIdentifier int64
 	if scanError := row.Scan(&executionIdentifier); scanError != nil {
@@ -81,6 +82,7 @@ func scanUserExecutionRows(rows *sql.Rows) ([]domain.TradingOperationExecution, 
 			&execution.CreatedAt,
 			&execution.UpdatedAt,
 			&execution.BinanceEnvironment,
+			&execution.InitiatedBy,
 		)
 		if scanError != nil {
 			return nil, scanError

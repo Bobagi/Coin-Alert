@@ -32,8 +32,9 @@ func NewUserTradingService(credentialService *UserCredentialService, settingsRep
 }
 
 // ExecuteBuy places a market buy for the given quote amount and an immediate take-profit limit sell.
-// Real-money (PRODUCTION) orders are refused unless the user explicitly enabled live trading.
-func (service *UserTradingService) ExecuteBuy(operationContext context.Context, userIdentifier int64, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64) (*domain.TradingOperation, error) {
+// initiatedBy records whether a user or the bot triggered it. Real-money (PRODUCTION) orders are
+// refused unless the user explicitly enabled live trading.
+func (service *UserTradingService) ExecuteBuy(operationContext context.Context, userIdentifier int64, initiatedBy string, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64) (*domain.TradingOperation, error) {
 	tradingPairSymbol = strings.ToUpper(strings.TrimSpace(tradingPairSymbol))
 	if tradingPairSymbol == "" {
 		return nil, errors.New("a trading pair is required")
@@ -82,14 +83,14 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 
 	buyOrderResponse, buyError := tradingService.PlaceMarketBuyByQuote(operationContext, tradingPairSymbol, quoteAmount)
 	if buyError != nil {
-		service.logExecution(operationContext, userIdentifier, environmentName, tradingPairSymbol, domain.TradingOperationTypeBuy, 0, 0, 0, false, buyError, nil)
+		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeBuy, 0, 0, 0, false, buyError, nil)
 		return nil, buyError
 	}
 
 	executedQuantity, _ := strconv.ParseFloat(buyOrderResponse.ExecutedQty, 64)
 	if executedQuantity <= 0 {
 		invalidQuantityError := errors.New("Binance returned an invalid executed quantity")
-		service.logExecution(operationContext, userIdentifier, environmentName, tradingPairSymbol, domain.TradingOperationTypeBuy, 0, 0, 0, false, invalidQuantityError, nil)
+		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeBuy, 0, 0, 0, false, invalidQuantityError, nil)
 		return nil, invalidQuantityError
 	}
 
@@ -99,7 +100,7 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	}
 
 	buyOrderIdentifier := strconv.FormatInt(buyOrderResponse.OrderID, 10)
-	service.logExecution(operationContext, userIdentifier, environmentName, tradingPairSymbol, domain.TradingOperationTypeBuy, purchasePricePerUnit, executedQuantity, purchasePricePerUnit*executedQuantity, true, nil, &buyOrderIdentifier)
+	service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeBuy, purchasePricePerUnit, executedQuantity, purchasePricePerUnit*executedQuantity, true, nil, &buyOrderIdentifier)
 
 	targetSellPricePerUnit := purchasePricePerUnit * (1 + (targetProfitPercent / 100))
 	if symbolFilters.TickSize > 0 {
@@ -109,11 +110,11 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	var sellOrderIdentifier *string
 	sellOrderResponse, sellError := tradingService.PlaceLimitSell(operationContext, tradingPairSymbol, executedQuantity, targetSellPricePerUnit, symbolFilters)
 	if sellError != nil {
-		service.logExecution(operationContext, userIdentifier, environmentName, tradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, false, sellError, nil)
+		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, false, sellError, nil)
 	} else if sellOrderResponse != nil {
 		identifier := strconv.FormatInt(sellOrderResponse.OrderID, 10)
 		sellOrderIdentifier = &identifier
-		service.logExecution(operationContext, userIdentifier, environmentName, tradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, true, nil, sellOrderIdentifier)
+		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, true, nil, sellOrderIdentifier)
 	}
 
 	operation := domain.TradingOperation{
@@ -135,21 +136,21 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	return &operation, nil
 }
 
-// ExecuteDailyPurchase performs the daily DCA buy and records a DAILY_BUY marker execution
-// (used for the daily-buy history and to keep the daily purchase idempotent within a day).
+// ExecuteDailyPurchase performs the daily DCA buy (always bot-initiated) and records a DAILY_BUY
+// marker execution (used for the daily-buy history and to keep the daily purchase idempotent).
 func (service *UserTradingService) ExecuteDailyPurchase(operationContext context.Context, userIdentifier int64, environment string, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64) (*domain.TradingOperation, error) {
-	operation, buyError := service.ExecuteBuy(operationContext, userIdentifier, tradingPairSymbol, quoteAmount, targetProfitPercent)
+	operation, buyError := service.ExecuteBuy(operationContext, userIdentifier, domain.ExecutionInitiatorBot, tradingPairSymbol, quoteAmount, targetProfitPercent)
 	if buyError != nil {
-		service.logExecution(operationContext, userIdentifier, environment, tradingPairSymbol, domain.TradingOperationTypeDailyBuy, 0, 0, 0, false, buyError, nil)
+		service.logExecution(operationContext, userIdentifier, environment, domain.ExecutionInitiatorBot, tradingPairSymbol, domain.TradingOperationTypeDailyBuy, 0, 0, 0, false, buyError, nil)
 		return nil, buyError
 	}
-	service.logExecution(operationContext, userIdentifier, operation.BinanceEnvironment, operation.TradingPairSymbol, domain.TradingOperationTypeDailyBuy, operation.PurchasePricePerUnit, operation.QuantityPurchased, operation.PurchasePricePerUnit*operation.QuantityPurchased, true, nil, operation.BuyOrderIdentifier)
+	service.logExecution(operationContext, userIdentifier, operation.BinanceEnvironment, domain.ExecutionInitiatorBot, operation.TradingPairSymbol, domain.TradingOperationTypeDailyBuy, operation.PurchasePricePerUnit, operation.QuantityPurchased, operation.PurchasePricePerUnit*operation.QuantityPurchased, true, nil, operation.BuyOrderIdentifier)
 	return operation, nil
 }
 
-// CloseOperationNow immediately closes an OPEN position at market on the user's request: it cancels
-// the resting take-profit limit sell, places a market sell for the held quantity, and marks the
-// operation sold. Real-money (PRODUCTION) sells require live trading to be enabled, like buys do.
+// CloseOperationNow immediately closes an OPEN position at market on the user's request (user-initiated):
+// it cancels the resting take-profit limit sell, places a market sell for the held quantity, and marks
+// the operation sold. Real-money (PRODUCTION) sells require live trading to be enabled, like buys do.
 func (service *UserTradingService) CloseOperationNow(operationContext context.Context, userIdentifier int64, operationIdentifier int64) (*domain.TradingOperation, error) {
 	operation, lookupError := service.operationRepository.FindOperationByIdForUser(operationContext, userIdentifier, operationIdentifier)
 	if lookupError != nil {
@@ -181,7 +182,7 @@ func (service *UserTradingService) CloseOperationNow(operationContext context.Co
 		if cancelError := tradingService.CancelOrder(operationContext, operation.TradingPairSymbol, *operation.SellOrderIdentifier); cancelError != nil {
 			if orderStatus, statusError := tradingService.GetOrderStatus(operationContext, operation.TradingPairSymbol, *operation.SellOrderIdentifier); statusError == nil && orderStatus != nil && orderStatus.Status == "FILLED" {
 				filledPrice := fillPriceFromStatus(*orderStatus, operation.PurchasePricePerUnit)
-				return service.finalizeManualSell(operationContext, userIdentifier, environmentName, *operation, filledPrice, operation.SellOrderIdentifier)
+				return service.finalizeManualSell(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, *operation, filledPrice, operation.SellOrderIdentifier)
 			}
 			return nil, fmt.Errorf("could not cancel the existing take-profit order: %w", cancelError)
 		}
@@ -189,18 +190,18 @@ func (service *UserTradingService) CloseOperationNow(operationContext context.Co
 
 	sellResponse, sellError := tradingService.PlaceMarketSellByQuantity(operationContext, operation.TradingPairSymbol, operation.QuantityPurchased)
 	if sellError != nil {
-		service.logExecution(operationContext, userIdentifier, environmentName, operation.TradingPairSymbol, domain.TradingOperationTypeSell, fallbackPrice, operation.QuantityPurchased, fallbackPrice*operation.QuantityPurchased, false, sellError, nil)
+		service.logExecution(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, operation.TradingPairSymbol, domain.TradingOperationTypeSell, fallbackPrice, operation.QuantityPurchased, fallbackPrice*operation.QuantityPurchased, false, sellError, nil)
 		return nil, sellError
 	}
 	sellOrderIdentifier := strconv.FormatInt(sellResponse.OrderID, 10)
-	return service.finalizeManualSell(operationContext, userIdentifier, environmentName, *operation, fillPriceFromOrder(*sellResponse, fallbackPrice), &sellOrderIdentifier)
+	return service.finalizeManualSell(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, *operation, fillPriceFromOrder(*sellResponse, fallbackPrice), &sellOrderIdentifier)
 }
 
-func (service *UserTradingService) finalizeManualSell(operationContext context.Context, userIdentifier int64, environment string, operation domain.TradingOperation, fillPrice float64, sellOrderIdentifier *string) (*domain.TradingOperation, error) {
+func (service *UserTradingService) finalizeManualSell(operationContext context.Context, userIdentifier int64, environment string, initiatedBy string, operation domain.TradingOperation, fillPrice float64, sellOrderIdentifier *string) (*domain.TradingOperation, error) {
 	if updateError := service.operationRepository.UpdateOperationAsSoldForUser(operationContext, userIdentifier, operation.Identifier, fillPrice); updateError != nil {
 		return nil, updateError
 	}
-	service.logExecution(operationContext, userIdentifier, environment, operation.TradingPairSymbol, domain.TradingOperationTypeSell, fillPrice, operation.QuantityPurchased, fillPrice*operation.QuantityPurchased, true, nil, sellOrderIdentifier)
+	service.logExecution(operationContext, userIdentifier, environment, initiatedBy, operation.TradingPairSymbol, domain.TradingOperationTypeSell, fillPrice, operation.QuantityPurchased, fillPrice*operation.QuantityPurchased, true, nil, sellOrderIdentifier)
 
 	soldAt := time.Now()
 	operation.Status = domain.TradingOperationStatusSold
@@ -210,8 +211,8 @@ func (service *UserTradingService) finalizeManualSell(operationContext context.C
 }
 
 // PlaceTakeProfitForOperation (re)places the resting take-profit limit sell for an OPEN position
-// whose sell order is missing (e.g. the original attempt failed with a PRICE_FILTER error). It is
-// idempotent: a still-live sell order is left in place, and an already-filled one reconciles to sold.
+// whose sell order is missing (user-initiated). It is idempotent: a still-live sell order is left in
+// place, and an already-filled one reconciles to sold.
 func (service *UserTradingService) PlaceTakeProfitForOperation(operationContext context.Context, userIdentifier int64, operationIdentifier int64) (*domain.TradingOperation, error) {
 	operation, lookupError := service.operationRepository.FindOperationByIdForUser(operationContext, userIdentifier, operationIdentifier)
 	if lookupError != nil {
@@ -247,7 +248,7 @@ func (service *UserTradingService) PlaceTakeProfitForOperation(operationContext 
 				return operation, nil
 			case "FILLED":
 				filledPrice := fillPriceFromStatus(*orderStatus, operation.PurchasePricePerUnit)
-				return service.finalizeManualSell(operationContext, userIdentifier, environmentName, *operation, filledPrice, operation.SellOrderIdentifier)
+				return service.finalizeManualSell(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, *operation, filledPrice, operation.SellOrderIdentifier)
 			}
 		}
 	}
@@ -260,12 +261,12 @@ func (service *UserTradingService) PlaceTakeProfitForOperation(operationContext 
 
 	sellOrderResponse, sellError := tradingService.PlaceLimitSell(operationContext, operation.TradingPairSymbol, operation.QuantityPurchased, targetSellPricePerUnit, symbolFilters)
 	if sellError != nil {
-		service.logExecution(operationContext, userIdentifier, environmentName, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, false, sellError, nil)
+		service.logExecution(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, false, sellError, nil)
 		return nil, sellError
 	}
 
 	sellOrderIdentifier := strconv.FormatInt(sellOrderResponse.OrderID, 10)
-	service.logExecution(operationContext, userIdentifier, environmentName, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, true, nil, &sellOrderIdentifier)
+	service.logExecution(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, true, nil, &sellOrderIdentifier)
 	if updateError := service.operationRepository.UpdateOperationSellOrderForUser(operationContext, userIdentifier, operation.Identifier, sellOrderIdentifier, targetSellPricePerUnit); updateError != nil {
 		return nil, updateError
 	}
@@ -307,7 +308,7 @@ func (service *UserTradingService) ListOpenOrders(loadContext context.Context, u
 	return tradingService.ListOpenOrders(loadContext, tradingPairSymbol)
 }
 
-func (service *UserTradingService) logExecution(operationContext context.Context, userIdentifier int64, environment string, tradingPairSymbol string, operationType string, unitPrice float64, quantity float64, totalValue float64, success bool, cause error, orderIdentifier *string) {
+func (service *UserTradingService) logExecution(operationContext context.Context, userIdentifier int64, environment string, initiatedBy string, tradingPairSymbol string, operationType string, unitPrice float64, quantity float64, totalValue float64, success bool, cause error, orderIdentifier *string) {
 	var errorMessage *string
 	if cause != nil {
 		message := cause.Error()
@@ -317,6 +318,7 @@ func (service *UserTradingService) logExecution(operationContext context.Context
 		TradingPairSymbol:  tradingPairSymbol,
 		OperationType:      operationType,
 		BinanceEnvironment: environment,
+		InitiatedBy:        initiatedBy,
 		UnitPrice:          unitPrice,
 		Quantity:           quantity,
 		TotalValue:         totalValue,

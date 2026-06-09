@@ -59,6 +59,7 @@ export interface Execution {
   success: boolean
   error_message: string | null
   order_id: string | null
+  initiated_by: string
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

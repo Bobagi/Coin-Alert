@@ -84,6 +84,7 @@ type executionPayload struct {
 	Success       bool      `json:"success"`
 	ErrorMessage  *string   `json:"error_message"`
 	OrderID       *string   `json:"order_id"`
+	InitiatedBy   string    `json:"initiated_by"`
 }
 
 func (handler *OperationsHandler) handleOperations(responseWriter http.ResponseWriter, request *http.Request) {
@@ -111,7 +112,7 @@ func (handler *OperationsHandler) handleOperations(responseWriter http.ResponseW
 		}
 		operationContext, cancel := context.WithTimeout(request.Context(), 25*time.Second)
 		defer cancel()
-		operation, buyError := handler.tradingService.ExecuteBuy(operationContext, userIdentifier, payload.Symbol, payload.QuoteAmount, payload.TargetProfitPercent)
+		operation, buyError := handler.tradingService.ExecuteBuy(operationContext, userIdentifier, domain.ExecutionInitiatorUser, payload.Symbol, payload.QuoteAmount, payload.TargetProfitPercent)
 		if buyError != nil {
 			writeJSONError(responseWriter, http.StatusBadRequest, buyError.Error())
 			return
@@ -278,6 +279,7 @@ func toExecutionPayloads(executions []domain.TradingOperationExecution) []execut
 			Success:       execution.Success,
 			ErrorMessage:  execution.ErrorMessage,
 			OrderID:       execution.OrderIdentifier,
+			InitiatedBy:   execution.InitiatedBy,
 		})
 	}
 	return payloads

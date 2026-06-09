@@ -222,7 +222,13 @@ const en: Dictionary = {
   'ops.noSellOrder': 'No take-profit sell order — it was not created. Use “Create sell order”.',
   'ops.retrySell': 'Create sell order',
   'ops.retrying': 'Creating…',
-  'ops.sellPlaced': 'Take-profit sell order created.'
+  'ops.sellPlaced': 'Take-profit sell order created.',
+  'hist.by': 'By',
+  'hist.bot': 'Bot',
+  'hist.you': 'You',
+  'ops.gtc': 'no expiry',
+  'ops.gtcHelp': 'Active order (GTC): it stays open until your target price is reached or you cancel it — there is no expiry date.',
+  'ops.sellOrderMeaning': 'Sell order — the take-profit is a GTC (Good-Till-Canceled) order: no expiry, it rests until the target is hit or you cancel/sell. ⚠ means it was not created — use “Create sell order”.'
 }
 
 const pt: Dictionary = {
@@ -405,7 +411,13 @@ const pt: Dictionary = {
   'ops.noSellOrder': 'Sem ordem de venda (take-profit) — não foi criada. Use “Criar ordem de venda”.',
   'ops.retrySell': 'Criar ordem de venda',
   'ops.retrying': 'Criando…',
-  'ops.sellPlaced': 'Ordem de venda (take-profit) criada.'
+  'ops.sellPlaced': 'Ordem de venda (take-profit) criada.',
+  'hist.by': 'Por',
+  'hist.bot': 'Bot',
+  'hist.you': 'Você',
+  'ops.gtc': 'sem validade',
+  'ops.gtcHelp': 'Ordem ativa (GTC): fica aberta até atingir o preço-alvo ou você cancelar — não tem data de validade.',
+  'ops.sellOrderMeaning': 'Ordem de venda — a take-profit é uma ordem GTC (Good-Till-Canceled): sem validade, fica em aberto até bater o alvo ou você cancelar/vender. ⚠ significa que não foi criada — use “Criar ordem de venda”.'
 }
 
 const es: Dictionary = {
@@ -588,7 +600,13 @@ const es: Dictionary = {
   'ops.noSellOrder': 'Sin orden de venta (take-profit) — no se creó. Usa “Crear orden de venta”.',
   'ops.retrySell': 'Crear orden de venta',
   'ops.retrying': 'Creando…',
-  'ops.sellPlaced': 'Orden de venta (take-profit) creada.'
+  'ops.sellPlaced': 'Orden de venta (take-profit) creada.',
+  'hist.by': 'Por',
+  'hist.bot': 'Bot',
+  'hist.you': 'Tú',
+  'ops.gtc': 'sin caducidad',
+  'ops.gtcHelp': 'Orden activa (GTC): permanece abierta hasta alcanzar el precio objetivo o que la canceles — no tiene fecha de caducidad.',
+  'ops.sellOrderMeaning': 'Orden de venta — el take-profit es una orden GTC (Good-Till-Canceled): sin caducidad, queda abierta hasta alcanzar el objetivo o que canceles/vendas. ⚠ significa que no se creó — usa “Crear orden de venta”.'
 }
 
 const dictionaries: Record<Locale, Dictionary> = { en, pt, es }
