@@ -117,8 +117,9 @@ explanations, gold theme, favicon, i18n; portfolio scraper integration. Pending/
 exists, route not rebuilt); more
 chart types (PnL/price/dividend calendar); WebSocket fills/price (today 30s polling; take-profit is
 already a resting limit order at exchange speed); remove the now-unwired legacy single-user *services*
-(`server.go` + `templates/` already deleted); decommission the old standalone `investidor10` container
-(:3054), now redundant.
+(`server.go` + `templates/` already deleted). The old standalone `investidor10` container (:3054) +
+its `investidor10.bobagi.space` vhost were **decommissioned** in the 2026-06 hardening pass (compose
+project at `/opt/investidor10` left on disk + the vhost kept in `sites-available`, so it is reversible).
 
 ## Don't print secrets
 `.env`, `/root/commands_band_share.txt`, and any API keys. Never echo/commit them.
