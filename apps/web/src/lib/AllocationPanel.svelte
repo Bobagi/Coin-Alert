@@ -167,9 +167,12 @@
             fill: true,
             tension: 0.25,
             pointRadius: values.map((_, index) => (index === lastIndex ? 3.5 : 0)),
-            pointHoverRadius: values.map((_, index) => (index === lastIndex ? 3.5 : 0)),
+            pointHoverRadius: 4.5,
             pointHitRadius: 24,
-            pointBackgroundColor: '#ffd43b'
+            pointBackgroundColor: '#ffd43b',
+            pointHoverBackgroundColor: '#ffd43b',
+            pointHoverBorderColor: '#15130d',
+            pointHoverBorderWidth: 2
           }
         ]
       },
