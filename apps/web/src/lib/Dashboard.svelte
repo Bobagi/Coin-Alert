@@ -230,6 +230,8 @@
   }
 
   $: belowMinimum = !!tradeFilters && tradeFilters.min_notional > 0 && tradeAmount < tradeFilters.min_notional
+  // CANCELED operations (take-profit removed externally) are dropped from the positions view.
+  $: visiblePositions = operations.filter((operation) => operation.status !== 'CANCELED')
 
   async function buy() {
     tradeBusy = true
@@ -394,7 +396,7 @@
           <label for="trade-target">{$t('buy.target')}</label>
           <input id="trade-target" type="number" bind:value={tradeTarget} min="0" step="0.01" />
         </div>
-        <button class="btn-block mt-5" disabled={tradeBusy || belowMinimum} on:click={buy}>
+        <button class="btn-block mt-5" disabled={tradeBusy || belowMinimum || !(tradeAmount > 0)} on:click={buy}>
           {tradeBusy ? $t('buy.placing') : $t('buy.button')}
         </button>
         {#if tradeMsg}<p class="success mt-3">{tradeMsg}</p>{/if}
@@ -457,6 +459,11 @@
             </div>
           </div>
           <p class="muted tz-note">{$t('settings.timezoneNote', { tz: localTimeZone, offset: tzOffset })}</p>
+          <div class="field">
+            <label for="sell-validity">{$t('settings.validity')}</label>
+            <input id="sell-validity" type="number" bind:value={settings.sell_order_validity_days} min="0" max="365" step="1" />
+            <span class="muted">{$t('settings.validityHelp')}</span>
+          </div>
           <label class="checkbox-row">
             <input type="checkbox" bind:checked={settings.live_trading_enabled} />
             {$t('settings.enableLive')}
@@ -496,7 +503,7 @@
         </details>
         {#if opsMsg}<p class="success mt-3">{opsMsg}</p>{/if}
         {#if opsErr}<p class="error mt-3">{opsErr}</p>{/if}
-        {#if operations.length === 0}
+        {#if visiblePositions.length === 0}
           <p class="muted mt-3">{$t('ops.none')}</p>
         {:else}
           <div class="table mt-3">
@@ -510,7 +517,7 @@
               <div>{$t('ops.purchased')}</div>
               <div class="col-actions">{$t('ops.actions')}</div>
             </div>
-            {#each operations as operation (operation.id)}
+            {#each visiblePositions as operation (operation.id)}
               <div class="trow">
                 <div>{operation.symbol}</div>
                 <div><span class="badge {operation.status === 'SOLD' ? 'green' : 'amber'}">{operation.status}</span></div>
@@ -520,7 +527,11 @@
                 <div class="sell-cell">
                   {#if operation.sell_order_id}
                     <span class="badge green" title={$t('ops.gtcHelp')}>✓</span>
-                    <span class="muted gtc" title={$t('ops.gtcHelp')}>{$t('ops.gtc')}</span>
+                    {#if operation.sell_order_expires_at}
+                      <span class="muted gtc">{$t('ops.expiresAt', { date: new Date(operation.sell_order_expires_at).toLocaleDateString($locale, { day: '2-digit', month: '2-digit' }) })}</span>
+                    {:else}
+                      <span class="muted gtc" title={$t('ops.gtcHelp')}>{$t('ops.gtc')}</span>
+                    {/if}
                   {:else if operation.status === 'OPEN'}
                     <span class="badge red" title={$t('ops.noSellOrder')}>⚠</span>
                   {:else}
@@ -564,7 +575,7 @@
             {#each executions as execution (execution.id)}
               <div class="hrow">
                 <div class="muted">{new Date(execution.executed_at).toLocaleString()}</div>
-                <div><span class="badge {execution.operation_type === 'SELL' ? 'green' : 'amber'}">{execution.operation_type}</span></div>
+                <div><span class="badge {execution.operation_type === 'SELL' ? 'green' : execution.operation_type.startsWith('SELL_') ? 'red' : 'amber'}">{$t('hist.act.' + execution.operation_type)}</span></div>
                 <div><span class="by-badge {execution.initiated_by === 'BOT' ? 'bot' : 'user'}">{execution.initiated_by === 'BOT' ? $t('hist.bot') : $t('hist.you')}</span></div>
                 <div>{execution.symbol}</div>
                 <div>{fmt(execution.unit_price)}</div>

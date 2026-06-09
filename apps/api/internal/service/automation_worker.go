@@ -126,12 +126,24 @@ func (worker *AutomationWorker) monitorUser(applicationContext context.Context, 
 }
 
 func (worker *AutomationWorker) processOpenOperation(applicationContext context.Context, userIdentifier int64, operation domain.TradingOperation, settings *domain.UserTradingSettings, tradingService *BinanceTradingService, resolvePrice func(string) (float64, bool)) {
-	// 1) Reconcile: if the resting take-profit limit sell has filled, mark the operation sold.
+	// 1) Reconcile the resting take-profit limit sell against Binance.
 	if operation.SellOrderIdentifier != nil {
 		orderStatus, statusError := tradingService.GetOrderStatus(applicationContext, operation.TradingPairSymbol, *operation.SellOrderIdentifier)
-		if statusError == nil && orderStatus != nil && orderStatus.Status == "FILLED" {
-			worker.markOperationSold(applicationContext, userIdentifier, operation, fillPriceFromStatus(*orderStatus, operation.PurchasePricePerUnit), "take-profit filled")
-			return
+		if statusError == nil && orderStatus != nil {
+			switch orderStatus.Status {
+			case "FILLED":
+				worker.markOperationSold(applicationContext, userIdentifier, operation, fillPriceFromStatus(*orderStatus, operation.PurchasePricePerUnit), "take-profit filled")
+				return
+			case "CANCELED", "EXPIRED", "REJECTED":
+				// Removed outside the app (e.g. the user cancelled it in the Binance app).
+				worker.markOperationCanceledExternally(applicationContext, userIdentifier, operation)
+				return
+			}
+			// Still resting: enforce the app-side validity window (Binance spot LIMIT has no native expiry).
+			if operation.SellOrderExpiresAt != nil && time.Now().After(*operation.SellOrderExpiresAt) {
+				worker.expireSellOrder(applicationContext, userIdentifier, operation, tradingService)
+				return
+			}
 		}
 	}
 
@@ -177,6 +189,53 @@ func (worker *AutomationWorker) markOperationSold(applicationContext context.Con
 	}
 	worker.logSellExecution(applicationContext, userIdentifier, operation.BinanceEnvironment, domain.ExecutionInitiatorBot, operation.TradingPairSymbol, fillPrice, operation.QuantityPurchased, true, nil, operation.SellOrderIdentifier)
 	log.Printf("automation: closed operation %d (user %d) via %s at %.8f", operation.Identifier, userIdentifier, reason, fillPrice)
+}
+
+// markOperationCanceledExternally handles a take-profit that was cancelled outside the app: it closes
+// the operation as CANCELED (drops it from the active positions view) and records a history event.
+func (worker *AutomationWorker) markOperationCanceledExternally(applicationContext context.Context, userIdentifier int64, operation domain.TradingOperation) {
+	if updateError := worker.operationRepository.MarkOperationCanceledForUser(applicationContext, userIdentifier, operation.Identifier); updateError != nil {
+		log.Printf("automation: could not mark operation %d canceled (user %d): %v", operation.Identifier, userIdentifier, updateError)
+		return
+	}
+	worker.logTakeProfitEvent(applicationContext, userIdentifier, operation, domain.TradingOperationTypeSellCancel, domain.ExecutionInitiatorUser)
+	log.Printf("automation: operation %d (user %d) take-profit cancelled externally; position released", operation.Identifier, userIdentifier)
+}
+
+// expireSellOrder cancels a take-profit that reached its validity window, leaving the position OPEN
+// but unprotected (⚠) so the user can re-place it or sell. Records a history event.
+func (worker *AutomationWorker) expireSellOrder(applicationContext context.Context, userIdentifier int64, operation domain.TradingOperation, tradingService *BinanceTradingService) {
+	if operation.SellOrderIdentifier != nil {
+		if cancelError := tradingService.CancelOrder(applicationContext, operation.TradingPairSymbol, *operation.SellOrderIdentifier); cancelError != nil {
+			// If it actually filled meanwhile, reconcile to sold instead of expiring it.
+			if orderStatus, statusError := tradingService.GetOrderStatus(applicationContext, operation.TradingPairSymbol, *operation.SellOrderIdentifier); statusError == nil && orderStatus != nil && orderStatus.Status == "FILLED" {
+				worker.markOperationSold(applicationContext, userIdentifier, operation, fillPriceFromStatus(*orderStatus, operation.PurchasePricePerUnit), "take-profit filled")
+				return
+			}
+			log.Printf("automation: could not cancel expired sell order for operation %d (user %d): %v", operation.Identifier, userIdentifier, cancelError)
+			return
+		}
+	}
+	if clearError := worker.operationRepository.ClearSellOrderForUser(applicationContext, userIdentifier, operation.Identifier); clearError != nil {
+		log.Printf("automation: could not clear expired sell order for operation %d (user %d): %v", operation.Identifier, userIdentifier, clearError)
+		return
+	}
+	worker.logTakeProfitEvent(applicationContext, userIdentifier, operation, domain.TradingOperationTypeSellExpire, domain.ExecutionInitiatorBot)
+	log.Printf("automation: take-profit for operation %d (user %d) reached its validity and was cancelled", operation.Identifier, userIdentifier)
+}
+
+// logTakeProfitEvent records a non-trade history event (cancel/expire) for a take-profit order.
+func (worker *AutomationWorker) logTakeProfitEvent(applicationContext context.Context, userIdentifier int64, operation domain.TradingOperation, operationType string, initiatedBy string) {
+	_, _ = worker.executionRepository.LogExecutionForUser(applicationContext, userIdentifier, domain.TradingOperationExecution{
+		TradingPairSymbol:  operation.TradingPairSymbol,
+		OperationType:      operationType,
+		BinanceEnvironment: operation.BinanceEnvironment,
+		InitiatedBy:        initiatedBy,
+		Quantity:           operation.QuantityPurchased,
+		ExecutedAt:         time.Now(),
+		Success:            true,
+		OrderIdentifier:    operation.SellOrderIdentifier,
+	})
 }
 
 func (worker *AutomationWorker) logSellExecution(applicationContext context.Context, userIdentifier int64, environment string, initiatedBy string, tradingPairSymbol string, unitPrice float64, quantity float64, success bool, cause error, orderIdentifier *string) {

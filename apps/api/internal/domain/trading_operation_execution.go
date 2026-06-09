@@ -21,9 +21,11 @@ type TradingOperationExecution struct {
 }
 
 const (
-	TradingOperationTypeBuy      = "BUY"
-	TradingOperationTypeSell     = "SELL"
-	TradingOperationTypeDailyBuy = "DAILY_BUY"
+	TradingOperationTypeBuy        = "BUY"
+	TradingOperationTypeSell       = "SELL"
+	TradingOperationTypeDailyBuy   = "DAILY_BUY"
+	TradingOperationTypeSellCancel = "SELL_CANCELED" // the take-profit was cancelled outside the app
+	TradingOperationTypeSellExpire = "SELL_EXPIRED"  // the take-profit reached its validity and was cancelled
 )
 
 // Who triggered an execution.

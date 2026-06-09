@@ -69,6 +69,7 @@ type operationPayload struct {
 	SellTargetPricePerUnit *float64   `json:"sell_target_price_per_unit"`
 	BuyOrderID             *string    `json:"buy_order_id"`
 	SellOrderID            *string    `json:"sell_order_id"`
+	SellOrderExpiresAt     *time.Time `json:"sell_order_expires_at"`
 	PurchasedAt            time.Time  `json:"purchased_at"`
 	SoldAt                 *time.Time `json:"sold_at"`
 }
@@ -252,6 +253,7 @@ func toOperationPayload(operation domain.TradingOperation) operationPayload {
 		SellTargetPricePerUnit: operation.SellTargetPricePerUnit,
 		BuyOrderID:             operation.BuyOrderIdentifier,
 		SellOrderID:            operation.SellOrderIdentifier,
+		SellOrderExpiresAt:     operation.SellOrderExpiresAt,
 		PurchasedAt:            operation.PurchaseTimestamp,
 		SoldAt:                 operation.SellTimestamp,
 	}

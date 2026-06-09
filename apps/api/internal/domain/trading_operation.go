@@ -3,8 +3,9 @@ package domain
 import "time"
 
 const (
-	TradingOperationStatusOpen = "OPEN"
-	TradingOperationStatusSold = "SOLD"
+	TradingOperationStatusOpen     = "OPEN"
+	TradingOperationStatusSold     = "SOLD"
+	TradingOperationStatusCanceled = "CANCELED" // take-profit cancelled externally; no longer tracked
 )
 
 type TradingOperation struct {
@@ -19,6 +20,7 @@ type TradingOperation struct {
 	SellTargetPricePerUnit *float64
 	BuyOrderIdentifier     *string
 	SellOrderIdentifier    *string
+	SellOrderExpiresAt     *time.Time // when the resting take-profit should auto-cancel (nil = GTC)
 	PurchaseTimestamp      time.Time
 	SellTimestamp          *time.Time
 }

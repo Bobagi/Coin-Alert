@@ -69,6 +69,7 @@ type tradingSettingsPayload struct {
 	AutomaticSellIntervalMinutes int      `json:"auto_sell_interval_minutes"`
 	DailyPurchaseHourUTC         int      `json:"daily_purchase_hour_utc"`
 	DailyPurchaseEnabled         bool     `json:"daily_purchase_enabled"`
+	SellOrderValidityDays        int      `json:"sell_order_validity_days"`
 	LiveTradingEnabled           bool     `json:"live_trading_enabled"`
 	ActiveBinanceEnvironment     string   `json:"active_binance_environment"`
 }
@@ -109,6 +110,7 @@ func (handler *APIHandler) handleSettings(responseWriter http.ResponseWriter, re
 			AutomaticSellIntervalMinutes: clampIntervalMinutes(payload.AutomaticSellIntervalMinutes),
 			DailyPurchaseHourUTC:         clampHourOfDay(payload.DailyPurchaseHourUTC),
 			DailyPurchaseEnabled:         payload.DailyPurchaseEnabled,
+			SellOrderValidityDays:        clampValidityDays(payload.SellOrderValidityDays),
 			LiveTradingEnabled:           payload.LiveTradingEnabled,
 			ActiveBinanceEnvironment:     environmentName,
 			BinanceEnvironment:           environmentName,
@@ -369,6 +371,7 @@ func toTradingSettingsPayload(settings *domain.UserTradingSettings) tradingSetti
 		AutomaticSellIntervalMinutes: settings.AutomaticSellIntervalMinutes,
 		DailyPurchaseHourUTC:         settings.DailyPurchaseHourUTC,
 		DailyPurchaseEnabled:         settings.DailyPurchaseEnabled,
+		SellOrderValidityDays:        settings.SellOrderValidityDays,
 		LiveTradingEnabled:           settings.LiveTradingEnabled,
 		ActiveBinanceEnvironment:     settings.ActiveBinanceEnvironment,
 	}
@@ -394,4 +397,14 @@ func clampHourOfDay(hour int) int {
 		return 4
 	}
 	return hour
+}
+
+func clampValidityDays(days int) int {
+	if days < 0 {
+		return 0
+	}
+	if days > 365 {
+		return 365
+	}
+	return days
 }

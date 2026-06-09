@@ -30,7 +30,7 @@ func (repository *PostgresUserTradingSettingsRepository) GetByUserAndEnvironment
 		lookupContext,
 		`SELECT user_id, trading_pair_symbol, capital_threshold, target_profit_percent,
 		        stop_loss_percent, auto_sell_interval_minutes, daily_purchase_hour_utc,
-		        daily_purchase_enabled, live_trading_enabled, active_binance_environment, binance_environment
+		        daily_purchase_enabled, sell_order_validity_days, live_trading_enabled, active_binance_environment, binance_environment
 		 FROM user_trading_settings WHERE user_id = $1 AND binance_environment = $2`,
 		userIdentifier, environment,
 	)
@@ -46,6 +46,7 @@ func (repository *PostgresUserTradingSettingsRepository) GetByUserAndEnvironment
 		&settings.AutomaticSellIntervalMinutes,
 		&settings.DailyPurchaseHourUTC,
 		&settings.DailyPurchaseEnabled,
+		&settings.SellOrderValidityDays,
 		&settings.LiveTradingEnabled,
 		&settings.ActiveBinanceEnvironment,
 		&settings.BinanceEnvironment,
@@ -88,8 +89,8 @@ func (repository *PostgresUserTradingSettingsRepository) Upsert(operationContext
 		`INSERT INTO user_trading_settings (
 		    user_id, trading_pair_symbol, capital_threshold, target_profit_percent,
 		    stop_loss_percent, auto_sell_interval_minutes, daily_purchase_hour_utc,
-		    daily_purchase_enabled, live_trading_enabled, active_binance_environment, binance_environment, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+		    daily_purchase_enabled, sell_order_validity_days, live_trading_enabled, active_binance_environment, binance_environment, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
 		 ON CONFLICT (user_id, binance_environment) DO UPDATE SET
 		    trading_pair_symbol = EXCLUDED.trading_pair_symbol,
 		    capital_threshold = EXCLUDED.capital_threshold,
@@ -98,6 +99,7 @@ func (repository *PostgresUserTradingSettingsRepository) Upsert(operationContext
 		    auto_sell_interval_minutes = EXCLUDED.auto_sell_interval_minutes,
 		    daily_purchase_hour_utc = EXCLUDED.daily_purchase_hour_utc,
 		    daily_purchase_enabled = EXCLUDED.daily_purchase_enabled,
+		    sell_order_validity_days = EXCLUDED.sell_order_validity_days,
 		    live_trading_enabled = EXCLUDED.live_trading_enabled,
 		    active_binance_environment = EXCLUDED.active_binance_environment,
 		    updated_at = NOW()`,
@@ -109,6 +111,7 @@ func (repository *PostgresUserTradingSettingsRepository) Upsert(operationContext
 		settings.AutomaticSellIntervalMinutes,
 		settings.DailyPurchaseHourUTC,
 		settings.DailyPurchaseEnabled,
+		settings.SellOrderValidityDays,
 		settings.LiveTradingEnabled,
 		settings.ActiveBinanceEnvironment,
 		settings.BinanceEnvironment,

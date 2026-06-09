@@ -97,7 +97,12 @@ settings (incl. **daily-buy on/off toggle** `daily_purchase_enabled`, migration 
 (migration 0011: `binance_environment` tags operations/executions and is part of the
 `user_trading_settings` composite PK — listings, the worker and settings all scope to the user's active
 environment via `UserCredentialService.ActiveEnvironmentName`); automation worker (reconcile + stop-loss
-+ daily DCA, skipped when the toggle is off); Svelte SPA with a **design system** (rem type scale +
++ daily DCA, skipped when the toggle is off; also **detects external take-profit cancellation**
+(Binance status CANCELED → operation CANCELED/released, dropped from Positions) and enforces an
+**app-side sell-order validity** — migration 0013 `sell_order_validity_days` (0=GTC) +
+`sell_order_expires_at`; on expiry it cancels the order and leaves the position ⚠ to re-place/sell);
+only **successful** executions are logged to history (failed attempts surface live + as ⚠, not as
+0/0/0 rows); Svelte SPA with a **design system** (rem type scale +
 spacing tokens in `app.css`, sticky `TopNav`, **SVG flags** in `LanguageDropdown` — emoji flags break on
 Windows, hash router in `stores.ts`), a **3-tab dashboard** (Binance connection [default] / Trade /
 B3-Investidor10) with an **environment switcher** (buttons; selecting activates + reloads) + **symbol

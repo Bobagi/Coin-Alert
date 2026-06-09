@@ -30,6 +30,7 @@ type UserTradingSettings struct {
 	AutomaticSellIntervalMinutes int
 	DailyPurchaseHourUTC         int
 	DailyPurchaseEnabled         bool // explicit on/off switch for the daily DCA buy
+	SellOrderValidityDays        int  // 0 = no expiry (GTC); N = cancel the take-profit after N days
 	LiveTradingEnabled           bool
 	ActiveBinanceEnvironment     string
 	BinanceEnvironment           string // the environment this per-environment settings row belongs to

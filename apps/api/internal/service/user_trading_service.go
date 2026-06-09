@@ -81,17 +81,16 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 		return nil, errors.New("the current price is unavailable for this pair")
 	}
 
+	// Only successful executions are recorded in history, so a failed buy returns the error to the
+	// user (shown live) without leaving a 0/0/0 row behind.
 	buyOrderResponse, buyError := tradingService.PlaceMarketBuyByQuote(operationContext, tradingPairSymbol, quoteAmount)
 	if buyError != nil {
-		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeBuy, 0, 0, 0, false, buyError, nil)
 		return nil, buyError
 	}
 
 	executedQuantity, _ := strconv.ParseFloat(buyOrderResponse.ExecutedQty, 64)
 	if executedQuantity <= 0 {
-		invalidQuantityError := errors.New("Binance returned an invalid executed quantity")
-		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeBuy, 0, 0, 0, false, invalidQuantityError, nil)
-		return nil, invalidQuantityError
+		return nil, errors.New("Binance returned an invalid executed quantity")
 	}
 
 	purchasePricePerUnit := currentPricePerUnit
@@ -108,12 +107,12 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	}
 
 	var sellOrderIdentifier *string
+	var sellOrderExpiresAt *time.Time
 	sellOrderResponse, sellError := tradingService.PlaceLimitSell(operationContext, tradingPairSymbol, executedQuantity, targetSellPricePerUnit, symbolFilters)
-	if sellError != nil {
-		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, false, sellError, nil)
-	} else if sellOrderResponse != nil {
+	if sellError == nil && sellOrderResponse != nil {
 		identifier := strconv.FormatInt(sellOrderResponse.OrderID, 10)
 		sellOrderIdentifier = &identifier
+		sellOrderExpiresAt = sellOrderExpiry(settings)
 		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, true, nil, sellOrderIdentifier)
 	}
 
@@ -126,6 +125,7 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 		BinanceEnvironment:     environmentName,
 		BuyOrderIdentifier:     &buyOrderIdentifier,
 		SellOrderIdentifier:    sellOrderIdentifier,
+		SellOrderExpiresAt:     sellOrderExpiresAt,
 		SellTargetPricePerUnit: &targetSellPricePerUnit,
 	}
 	operationIdentifier, recordError := service.operationRepository.CreatePurchaseOperationForUser(operationContext, userIdentifier, operation)
@@ -141,7 +141,6 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 func (service *UserTradingService) ExecuteDailyPurchase(operationContext context.Context, userIdentifier int64, environment string, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64) (*domain.TradingOperation, error) {
 	operation, buyError := service.ExecuteBuy(operationContext, userIdentifier, domain.ExecutionInitiatorBot, tradingPairSymbol, quoteAmount, targetProfitPercent)
 	if buyError != nil {
-		service.logExecution(operationContext, userIdentifier, environment, domain.ExecutionInitiatorBot, tradingPairSymbol, domain.TradingOperationTypeDailyBuy, 0, 0, 0, false, buyError, nil)
 		return nil, buyError
 	}
 	service.logExecution(operationContext, userIdentifier, operation.BinanceEnvironment, domain.ExecutionInitiatorBot, operation.TradingPairSymbol, domain.TradingOperationTypeDailyBuy, operation.PurchasePricePerUnit, operation.QuantityPurchased, operation.PurchasePricePerUnit*operation.QuantityPurchased, true, nil, operation.BuyOrderIdentifier)
@@ -190,7 +189,6 @@ func (service *UserTradingService) CloseOperationNow(operationContext context.Co
 
 	sellResponse, sellError := tradingService.PlaceMarketSellByQuantity(operationContext, operation.TradingPairSymbol, operation.QuantityPurchased)
 	if sellError != nil {
-		service.logExecution(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, operation.TradingPairSymbol, domain.TradingOperationTypeSell, fallbackPrice, operation.QuantityPurchased, fallbackPrice*operation.QuantityPurchased, false, sellError, nil)
 		return nil, sellError
 	}
 	sellOrderIdentifier := strconv.FormatInt(sellResponse.OrderID, 10)
@@ -261,18 +259,28 @@ func (service *UserTradingService) PlaceTakeProfitForOperation(operationContext 
 
 	sellOrderResponse, sellError := tradingService.PlaceLimitSell(operationContext, operation.TradingPairSymbol, operation.QuantityPurchased, targetSellPricePerUnit, symbolFilters)
 	if sellError != nil {
-		service.logExecution(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, false, sellError, nil)
 		return nil, sellError
 	}
 
 	sellOrderIdentifier := strconv.FormatInt(sellOrderResponse.OrderID, 10)
+	sellOrderExpiresAt := sellOrderExpiry(settings)
 	service.logExecution(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, true, nil, &sellOrderIdentifier)
-	if updateError := service.operationRepository.UpdateOperationSellOrderForUser(operationContext, userIdentifier, operation.Identifier, sellOrderIdentifier, targetSellPricePerUnit); updateError != nil {
+	if updateError := service.operationRepository.UpdateOperationSellOrderForUser(operationContext, userIdentifier, operation.Identifier, sellOrderIdentifier, targetSellPricePerUnit, sellOrderExpiresAt); updateError != nil {
 		return nil, updateError
 	}
 	operation.SellOrderIdentifier = &sellOrderIdentifier
 	operation.SellTargetPricePerUnit = &targetSellPricePerUnit
+	operation.SellOrderExpiresAt = sellOrderExpiresAt
 	return operation, nil
+}
+
+// sellOrderExpiry returns when a freshly-placed take-profit should auto-cancel, or nil for GTC.
+func sellOrderExpiry(settings *domain.UserTradingSettings) *time.Time {
+	if settings == nil || settings.SellOrderValidityDays <= 0 {
+		return nil
+	}
+	expiry := time.Now().Add(time.Duration(settings.SellOrderValidityDays) * 24 * time.Hour)
+	return &expiry
 }
 
 func (service *UserTradingService) ListOperations(loadContext context.Context, userIdentifier int64, limit int) ([]domain.TradingOperation, error) {

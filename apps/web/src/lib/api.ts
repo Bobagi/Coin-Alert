@@ -22,6 +22,7 @@ export interface TradingSettings {
   auto_sell_interval_minutes: number
   daily_purchase_hour_utc: number
   daily_purchase_enabled: boolean
+  sell_order_validity_days: number
   live_trading_enabled: boolean
   active_binance_environment: string
 }
@@ -44,6 +45,7 @@ export interface Operation {
   sell_target_price_per_unit: number | null
   buy_order_id: string | null
   sell_order_id: string | null
+  sell_order_expires_at: string | null
   purchased_at: string
   sold_at: string | null
 }

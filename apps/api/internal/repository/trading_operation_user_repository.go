@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"coin-alert/internal/domain"
 )
@@ -13,7 +14,7 @@ var ErrOperationNotFound = errors.New("operation not found")
 
 const userTradingOperationColumns = `id, trading_pair_symbol, quantity_purchased, purchase_price_per_unit,
 	target_profit_percent, status, sell_price_per_unit, purchased_at, sold_at,
-	buy_order_id, sell_order_id, sell_target_price_per_unit, COALESCE(binance_environment, '')`
+	buy_order_id, sell_order_id, sell_target_price_per_unit, COALESCE(binance_environment, ''), sell_order_expires_at`
 
 // UserTradingOperationRepository persists trading operations scoped to a single user AND environment.
 type UserTradingOperationRepository interface {
@@ -22,7 +23,9 @@ type UserTradingOperationRepository interface {
 	ListOpenOperationsForUser(loadContext context.Context, userIdentifier int64, environment string) ([]domain.TradingOperation, error)
 	FindOperationByIdForUser(loadContext context.Context, userIdentifier int64, operationIdentifier int64) (*domain.TradingOperation, error)
 	UpdateOperationAsSoldForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellPricePerUnit float64) error
-	UpdateOperationSellOrderForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellOrderIdentifier string, sellTargetPrice float64) error
+	UpdateOperationSellOrderForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellOrderIdentifier string, sellTargetPrice float64, sellOrderExpiresAt *time.Time) error
+	MarkOperationCanceledForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64) error
+	ClearSellOrderForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64) error
 	CalculateOpenAllocationTotalForUser(loadContext context.Context, userIdentifier int64, environment string) (float64, error)
 }
 
@@ -30,8 +33,8 @@ func (repository *PostgresTradingOperationRepository) CreatePurchaseOperationFor
 	row := repository.Database.QueryRowContext(
 		operationContext,
 		`INSERT INTO trading_operations
-		    (user_id, trading_pair_symbol, quantity_purchased, purchase_price_per_unit, target_profit_percent, status, buy_order_id, sell_order_id, sell_target_price_per_unit, binance_environment)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		    (user_id, trading_pair_symbol, quantity_purchased, purchase_price_per_unit, target_profit_percent, status, buy_order_id, sell_order_id, sell_target_price_per_unit, binance_environment, sell_order_expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING id`,
 		userIdentifier,
 		operation.TradingPairSymbol,
@@ -43,6 +46,7 @@ func (repository *PostgresTradingOperationRepository) CreatePurchaseOperationFor
 		operation.SellOrderIdentifier,
 		operation.SellTargetPricePerUnit,
 		operation.BinanceEnvironment,
+		operation.SellOrderExpiresAt,
 	)
 	var operationIdentifier int64
 	if scanError := row.Scan(&operationIdentifier); scanError != nil {
@@ -106,11 +110,33 @@ func (repository *PostgresTradingOperationRepository) UpdateOperationAsSoldForUs
 	return updateError
 }
 
-func (repository *PostgresTradingOperationRepository) UpdateOperationSellOrderForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellOrderIdentifier string, sellTargetPrice float64) error {
+func (repository *PostgresTradingOperationRepository) UpdateOperationSellOrderForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64, sellOrderIdentifier string, sellTargetPrice float64, sellOrderExpiresAt *time.Time) error {
 	_, updateError := repository.Database.ExecContext(
 		operationContext,
-		`UPDATE trading_operations SET sell_order_id = $1, sell_target_price_per_unit = $2 WHERE id = $3 AND user_id = $4`,
-		sellOrderIdentifier, sellTargetPrice, operationIdentifier, userIdentifier,
+		`UPDATE trading_operations SET sell_order_id = $1, sell_target_price_per_unit = $2, sell_order_expires_at = $3 WHERE id = $4 AND user_id = $5`,
+		sellOrderIdentifier, sellTargetPrice, sellOrderExpiresAt, operationIdentifier, userIdentifier,
+	)
+	return updateError
+}
+
+// MarkOperationCanceledForUser closes an operation as CANCELED (its take-profit was cancelled outside
+// the app), removing it from the active positions view.
+func (repository *PostgresTradingOperationRepository) MarkOperationCanceledForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64) error {
+	_, updateError := repository.Database.ExecContext(
+		operationContext,
+		`UPDATE trading_operations SET status = $1, sold_at = NOW() WHERE id = $2 AND user_id = $3`,
+		domain.TradingOperationStatusCanceled, operationIdentifier, userIdentifier,
+	)
+	return updateError
+}
+
+// ClearSellOrderForUser detaches the resting sell order from an OPEN operation (e.g. after its
+// validity expired), leaving the position open but unprotected so the user can re-place or sell.
+func (repository *PostgresTradingOperationRepository) ClearSellOrderForUser(operationContext context.Context, userIdentifier int64, operationIdentifier int64) error {
+	_, updateError := repository.Database.ExecContext(
+		operationContext,
+		`UPDATE trading_operations SET sell_order_id = NULL, sell_order_expires_at = NULL WHERE id = $1 AND user_id = $2`,
+		operationIdentifier, userIdentifier,
 	)
 	return updateError
 }
@@ -136,6 +162,7 @@ func scanUserTradingOperationRows(rows *sql.Rows) ([]domain.TradingOperation, er
 		var buyOrderIdentifier sql.NullString
 		var sellOrderIdentifier sql.NullString
 		var sellTargetPrice sql.NullFloat64
+		var sellOrderExpiresAt sql.NullTime
 		scanError := rows.Scan(
 			&operation.Identifier,
 			&operation.TradingPairSymbol,
@@ -150,6 +177,7 @@ func scanUserTradingOperationRows(rows *sql.Rows) ([]domain.TradingOperation, er
 			&sellOrderIdentifier,
 			&sellTargetPrice,
 			&operation.BinanceEnvironment,
+			&sellOrderExpiresAt,
 		)
 		if scanError != nil {
 			return nil, scanError
@@ -169,6 +197,10 @@ func scanUserTradingOperationRows(rows *sql.Rows) ([]domain.TradingOperation, er
 		if sellTargetPrice.Valid {
 			value := sellTargetPrice.Float64
 			operation.SellTargetPricePerUnit = &value
+		}
+		if sellOrderExpiresAt.Valid {
+			value := sellOrderExpiresAt.Time
+			operation.SellOrderExpiresAt = &value
 		}
 		operations = append(operations, operation)
 	}
