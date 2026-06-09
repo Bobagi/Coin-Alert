@@ -150,8 +150,9 @@
   function renderLine() {
     if (!lineCanvas || !selectedHolding || seriesPoints.length < 2) return
     if (lineChart) lineChart.destroy()
-    const quantity = selectedHolding.quantity
-    const values = seriesPoints.map((point) => point.close * quantity)
+    // The chart shows the COIN'S PRICE over the period (not quantity × price); the header and pills
+    // are what reflect how much of it you hold.
+    const values = seriesPoints.map((point) => point.close)
     const lastIndex = values.length - 1
     lineChart = new Chart(lineCanvas, {
       type: 'line',
