@@ -7,6 +7,7 @@
   import PortfolioPanel from './PortfolioPanel.svelte'
   import LegalFooter from './LegalFooter.svelte'
   import SymbolAutocomplete from './SymbolAutocomplete.svelte'
+  import LockOverlay from './LockOverlay.svelte'
 
   let activeTab: 'connection' | 'trade' | 'b3' = 'trade'
   let opsView: 'positions' | 'history' = 'positions'
@@ -115,6 +116,8 @@
   $: botActive = botEnabled && !!settings && settings.capital_threshold > 0
   $: connected = !!credentials?.has_active_credential
   $: isAdmin = !!$currentUser?.is_admin
+  // The Trade tab needs a Binance environment (Testnet or Production) before anything can run.
+  $: tradeLocked = (credentials?.configured_environments?.length ?? 0) === 0
   $: selectedRobot = robots.find((robot) => robot.id === selectedRobotId) || null
   $: canCreateRobot = robotLimit === 0 || robots.length < robotLimit
   $: robotProductionNeedsLive = credentials?.active_environment === 'PRODUCTION' && !!settings && !settings.live_trading_enabled
@@ -475,11 +478,13 @@
   </details>
 
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" aria-selected={activeTab === 'trade'} class:active={activeTab === 'trade'} on:click={() => (activeTab = 'trade')}>{$t('tab.trade')}</button>
+    <button class="tab" role="tab" aria-selected={activeTab === 'trade'} class:active={activeTab === 'trade'} on:click={() => (activeTab = 'trade')}>
+      {$t('tab.trade')}{#if tradeLocked}<span class="tab-lock" title={$t('lock.tradeMsg')}>🔒</span>{/if}
+    </button>
     <button class="tab" role="tab" aria-selected={activeTab === 'connection'} class:active={activeTab === 'connection'} on:click={() => (activeTab = 'connection')}>{$t('tab.connection')}</button>
-    {#if isAdmin}
-      <button class="tab" role="tab" aria-selected={activeTab === 'b3'} class:active={activeTab === 'b3'} on:click={() => (activeTab = 'b3')}>{$t('tab.b3')}</button>
-    {/if}
+    <button class="tab" role="tab" aria-selected={activeTab === 'b3'} class:active={activeTab === 'b3'} on:click={() => (activeTab = 'b3')}>
+      {$t('tab.b3')}{#if !isAdmin}<span class="tab-lock" title={$t('lock.b3Msg')}>🔒</span>{/if}
+    </button>
   </div>
 
   {#if activeTab === 'connection'}
@@ -536,6 +541,11 @@
       {#if credErr}<p class="error mt-3">{credErr}</p>{/if}
     </section>
   {:else if activeTab === 'trade'}
+    <div class="locked-wrap">
+      {#if tradeLocked}
+        <LockOverlay message={$t('lock.tradeMsg')} ctaLabel={$t('lock.goConnect')} onCta={() => (activeTab = 'connection')} />
+      {/if}
+      <div class="locked-content" class:dimmed={tradeLocked}>
     <div class="grid">
       <section class="card">
         <div class="card-header">
@@ -849,8 +859,17 @@
         {/if}
       {/if}
     </section>
-  {:else if activeTab === 'b3' && isAdmin}
-    <PortfolioPanel />
+      </div>
+    </div>
+  {:else if activeTab === 'b3'}
+    <div class="locked-wrap">
+      {#if !isAdmin}
+        <LockOverlay message={$t('lock.b3Msg')} />
+      {/if}
+      <div class="locked-content" class:dimmed={!isAdmin}>
+        <PortfolioPanel />
+      </div>
+    </div>
   {/if}
 
   <LegalFooter />
@@ -868,6 +887,9 @@
   .tab { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); font-weight: 700; height: auto; padding: var(--space-3) var(--space-4); }
   .tab:hover:not(:disabled) { filter: none; color: var(--text); }
   .tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+  .tab-lock { margin-left: var(--space-1); font-size: 0.8em; }
+  .locked-wrap { position: relative; }
+  .locked-content.dimmed { pointer-events: none; opacity: 0.5; filter: grayscale(0.4); user-select: none; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4); align-items: start; }
   .conn { max-width: 560px; }
