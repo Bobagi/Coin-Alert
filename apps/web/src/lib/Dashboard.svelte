@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, type TradingSettings, type CredentialStatus, type Operation, type Execution } from './api'
-  import { binanceStatus } from './stores'
+  import { api, type TradingSettings, type CredentialStatus, type Operation, type Execution, type Robot } from './api'
+  import { binanceStatus, currentUser } from './stores'
   import { t, locale } from './i18n'
   import AllocationPanel from './AllocationPanel.svelte'
   import PortfolioPanel from './PortfolioPanel.svelte'
   import LegalFooter from './LegalFooter.svelte'
   import SymbolAutocomplete from './SymbolAutocomplete.svelte'
 
-  let activeTab: 'connection' | 'trade' | 'b3' = 'connection'
+  let activeTab: 'connection' | 'trade' | 'b3' = 'trade'
   let opsView: 'positions' | 'history' = 'positions'
   const environments = ['TESTNET', 'PRODUCTION']
 
@@ -55,6 +55,19 @@
   let opsMsg = ''
   let opsErr = ''
 
+  // Robots: each is one automated bot for a single coin. The settings panel is hidden until a robot
+  // is selected from the list.
+  let robots: Robot[] = []
+  let robotLimit = 1 // 0 = unlimited (admins)
+  let selectedRobotId: number | null = null
+  let creatingRobot = false
+  let newRobotSymbol = 'BTCUSDT'
+  let robotDraft: Robot | null = null
+  let robotDailyHourLocal = 4
+  let robotBusy = false
+  let robotMsg = ''
+  let robotErr = ''
+
   const fmt = (value: number | null) =>
     value === null || value === undefined ? '—' : value.toLocaleString(undefined, { maximumFractionDigits: 8 })
 
@@ -90,6 +103,10 @@
   $: botEnabled = !!settings && settings.daily_purchase_enabled
   $: botActive = botEnabled && !!settings && settings.capital_threshold > 0
   $: connected = !!credentials?.has_active_credential
+  $: isAdmin = !!$currentUser?.is_admin
+  $: selectedRobot = robots.find((robot) => robot.id === selectedRobotId) || null
+  $: canCreateRobot = robotLimit === 0 || robots.length < robotLimit
+  $: robotProductionNeedsLive = credentials?.active_environment === 'PRODUCTION' && !!settings && !settings.live_trading_enabled
   $: needsLiveWarning = botActive && credentials?.active_environment === 'PRODUCTION' && !!settings && !settings.live_trading_enabled
   $: nextRun = nextDailyRun(localHourToUtc(dailyHourLocal))
   $: nextRunLabel = nextRun.toLocaleString($locale, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
@@ -152,6 +169,9 @@
       await loadAll()
       await loadExecutions()
       loadSymbols()
+      loadRobots()
+      selectedRobotId = null
+      creatingRobot = false
     } catch (e) {
       credErr = (e as Error).message
     } finally {
@@ -171,6 +191,9 @@
       await loadAll()
       await loadExecutions()
       loadSymbols()
+      loadRobots()
+      selectedRobotId = null
+      creatingRobot = false
       envMsg = $t('binance.activated')
     } catch (e) {
       envErr = (e as Error).message
@@ -287,11 +310,94 @@
     }
   }
 
+  async function loadRobots() {
+    try {
+      const response = await api.getRobots()
+      robots = response.robots
+      robotLimit = response.limit
+    } catch {
+      robots = []
+    }
+  }
+
+  function selectRobot(robot: Robot) {
+    robotDraft = { ...robot }
+    robotDailyHourLocal = utcHourToLocal(robot.daily_purchase_hour_utc)
+    selectedRobotId = robot.id
+    creatingRobot = false
+    robotMsg = ''
+    robotErr = ''
+  }
+
+  async function createRobot() {
+    robotBusy = true
+    robotErr = ''
+    robotMsg = ''
+    try {
+      const created = await api.createRobot({
+        symbol: newRobotSymbol,
+        name: newRobotSymbol,
+        capital_threshold: 0,
+        target_profit_percent: 1.5,
+        stop_loss_percent: null,
+        daily_purchase_hour_utc: localHourToUtc(4),
+        daily_purchase_enabled: false,
+        sell_order_validity_days: 0,
+        is_enabled: true
+      })
+      await loadRobots()
+      robotMsg = $t('robots.created')
+      selectRobot(robots.find((robot) => robot.id === created.id) || created)
+    } catch (e) {
+      robotErr = (e as Error).message
+    } finally {
+      robotBusy = false
+    }
+  }
+
+  async function saveRobot() {
+    if (!robotDraft) return
+    robotBusy = true
+    robotErr = ''
+    robotMsg = ''
+    try {
+      robotDraft.daily_purchase_hour_utc = localHourToUtc(robotDailyHourLocal)
+      if (!(robotDraft.stop_loss_percent && robotDraft.stop_loss_percent > 0)) robotDraft.stop_loss_percent = null
+      const updated = await api.updateRobot(robotDraft)
+      await loadRobots()
+      robotDraft = { ...updated }
+      robotMsg = $t('robots.saved')
+    } catch (e) {
+      robotErr = (e as Error).message
+    } finally {
+      robotBusy = false
+    }
+  }
+
+  async function deleteRobot(robotId: number) {
+    if (!confirm($t('robots.deleteConfirm'))) return
+    robotBusy = true
+    robotErr = ''
+    robotMsg = ''
+    try {
+      await api.deleteRobot(robotId)
+      selectedRobotId = null
+      robotDraft = null
+      await loadRobots()
+      robotMsg = $t('robots.deleted')
+    } catch (e) {
+      robotErr = (e as Error).message
+    } finally {
+      robotBusy = false
+    }
+  }
+
   onMount(async () => {
     await loadAll()
     checkPrice()
     loadSymbols()
     loadExecutions()
+    loadRobots()
   })
 </script>
 
@@ -313,9 +419,11 @@
   </details>
 
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" aria-selected={activeTab === 'connection'} class:active={activeTab === 'connection'} on:click={() => (activeTab = 'connection')}>{$t('tab.connection')}</button>
     <button class="tab" role="tab" aria-selected={activeTab === 'trade'} class:active={activeTab === 'trade'} on:click={() => (activeTab = 'trade')}>{$t('tab.trade')}</button>
-    <button class="tab" role="tab" aria-selected={activeTab === 'b3'} class:active={activeTab === 'b3'} on:click={() => (activeTab = 'b3')}>{$t('tab.b3')}</button>
+    <button class="tab" role="tab" aria-selected={activeTab === 'connection'} class:active={activeTab === 'connection'} on:click={() => (activeTab = 'connection')}>{$t('tab.connection')}</button>
+    {#if isAdmin}
+      <button class="tab" role="tab" aria-selected={activeTab === 'b3'} class:active={activeTab === 'b3'} on:click={() => (activeTab = 'b3')}>{$t('tab.b3')}</button>
+    {/if}
   </div>
 
   {#if activeTab === 'connection'}
@@ -403,78 +511,125 @@
         {#if tradeErr}<p class="error mt-3">{tradeErr}</p>{/if}
       </section>
 
-      {#if settings}
-        <section class="card">
-          <div class="card-header">
-            <span class="card-title">{$t('settings.title')}</span>
-            <span class="card-subtitle">{$t('settings.subtitle')}</span>
+      <section class="card">
+        <div class="card-header ops-header">
+          <div class="stack-title">
+            <span class="card-title">{$t('robots.title')}</span>
+            <span class="card-subtitle">{$t('robots.subtitle')}</span>
           </div>
+          {#if selectedRobot && robotDraft}
+            <button class="btn-sm ghost" on:click={() => { selectedRobotId = null; robotDraft = null }}>{$t('robots.back')}</button>
+          {:else if !creatingRobot}
+            <button class="btn-sm" disabled={!canCreateRobot} on:click={() => { creatingRobot = true; robotErr = ''; robotMsg = '' }}>{$t('robots.new')}</button>
+          {/if}
+        </div>
+        <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('robots.help')}</p></details>
+        <p class="muted">{isAdmin ? $t('robots.planAdmin') : $t('robots.planStandard', { n: robotLimit })}</p>
+        {#if robotMsg}<p class="success mt-2">✓ {robotMsg}</p>{/if}
+        {#if robotErr}<p class="error mt-2">{robotErr}</p>{/if}
 
-          <div class="bot-status" class:on={botActive}>
+        {#if selectedRobot && robotDraft}
+          <div class="bot-status" class:on={robotDraft.is_enabled && robotDraft.daily_purchase_enabled && robotDraft.capital_threshold > 0}>
             <div class="bot-head">
-              <span class="badge {botActive ? 'green' : 'amber'}">{botActive ? $t('bot.active') : $t('bot.inactive')}</span>
-              <strong>{$t('bot.title')}</strong>
+              <span class="badge {robotDraft.is_enabled ? 'green' : 'amber'}">{robotDraft.is_enabled ? $t('robots.on') : $t('robots.off')}</span>
+              <strong>{robotDraft.symbol}</strong>
               <span class="spacer"></span>
-              <button type="button" class="btn-sm bot-toggle {botEnabled ? 'ghost' : ''}" disabled={botToggleBusy} on:click={toggleBot}>
-                {botToggleBusy ? $t('common.saving') : botEnabled ? $t('bot.pause') : $t('bot.resume')}
-              </button>
+              <label class="switch-inline"><input type="checkbox" bind:checked={robotDraft.is_enabled} /> {$t('robots.master')}</label>
             </div>
-            {#if !botEnabled}
-              <p class="muted">{$t('bot.paused')}</p>
-            {:else if !botActive}
-              <p class="muted">{$t('bot.off')}</p>
-            {:else}
-              <p class="muted">{$t('bot.summary', { time: formatHour(dailyHourLocal), capital: fmt(settings.capital_threshold), symbol: settings.trading_pair_symbol, target: settings.target_profit_percent })}</p>
-              <p class="next">{$t('bot.next', { when: nextRunLabel, hours: hoursUntilNext })}</p>
+            {#if robotDraft.is_enabled && robotDraft.daily_purchase_enabled && robotDraft.capital_threshold > 0}
+              <p class="muted">{$t('bot.summary', { time: formatHour(robotDailyHourLocal), capital: fmt(robotDraft.capital_threshold), symbol: robotDraft.symbol, target: robotDraft.target_profit_percent })}</p>
               {#if !connected}<p class="warn">{$t('bot.needsConnection')}</p>{/if}
-              {#if needsLiveWarning}<p class="warn">{$t('bot.needsLive')}</p>{/if}
+              {#if robotProductionNeedsLive}<p class="warn">{$t('bot.needsLive')}</p>{/if}
+            {:else}
+              <p class="muted">{$t('robots.idleHint')}</p>
             {/if}
           </div>
 
-          <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('settings.help')}</p></details>
           <div class="field">
-            <label for="default-pair">{$t('settings.defaultPair')}</label>
-            <SymbolAutocomplete id="default-pair" bind:value={settings.trading_pair_symbol} options={symbols} placeholder="BTCUSDT" />
+            <label for="robot-name">{$t('robots.name')}</label>
+            <input id="robot-name" bind:value={robotDraft.name} placeholder={$t('robots.namePlaceholder')} />
           </div>
           <div class="grid-2 mt-4">
             <div class="field" style="margin-top:0">
-              <label for="capital">{$t('settings.capital')}</label>
-              <input id="capital" type="number" bind:value={settings.capital_threshold} min="0" step="0.01" />
+              <label for="robot-coin">{$t('robots.coin')}</label>
+              <input id="robot-coin" value={robotDraft.symbol} disabled />
+            </div>
+            <label class="checkbox-row" style="margin-top:0">
+              <input type="checkbox" bind:checked={robotDraft.daily_purchase_enabled} />
+              {$t('robots.dailyEnabled')}
+            </label>
+          </div>
+          <div class="grid-2 mt-4">
+            <div class="field" style="margin-top:0">
+              <label for="robot-capital">{$t('settings.capital')}</label>
+              <input id="robot-capital" type="number" bind:value={robotDraft.capital_threshold} min="0" step="0.01" />
             </div>
             <div class="field" style="margin-top:0">
-              <label for="target">{$t('settings.target')}</label>
-              <input id="target" type="number" bind:value={settings.target_profit_percent} min="0" step="0.01" />
+              <label for="robot-target">{$t('settings.target')}</label>
+              <input id="robot-target" type="number" bind:value={robotDraft.target_profit_percent} min="0" step="0.01" />
             </div>
           </div>
           <div class="grid-2 mt-4">
             <div class="field" style="margin-top:0">
-              <label for="stop-loss">{$t('settings.stopLoss')}</label>
-              <input id="stop-loss" type="number" bind:value={settings.stop_loss_percent} min="0" step="0.01" placeholder={$t('settings.stopLossNone')} />
+              <label for="robot-stop">{$t('settings.stopLoss')}</label>
+              <input id="robot-stop" type="number" bind:value={robotDraft.stop_loss_percent} min="0" step="0.01" placeholder={$t('settings.stopLossNone')} />
             </div>
             <div class="field" style="margin-top:0">
-              <label for="daily-time">{$t('settings.dailyTime')}</label>
-              <select id="daily-time" bind:value={dailyHourLocal}>
+              <label for="robot-daily-time">{$t('settings.dailyTime')}</label>
+              <select id="robot-daily-time" bind:value={robotDailyHourLocal}>
                 {#each hours as hour}<option value={hour}>{formatHour(hour)}</option>{/each}
               </select>
             </div>
           </div>
           <p class="muted tz-note">{$t('settings.timezoneNote', { tz: localTimeZone, offset: tzOffset })}</p>
           <div class="field">
-            <label for="sell-validity">{$t('settings.validity')}</label>
-            <input id="sell-validity" type="number" bind:value={settings.sell_order_validity_days} min="0" max="365" step="1" />
+            <label for="robot-validity">{$t('settings.validity')}</label>
+            <input id="robot-validity" type="number" bind:value={robotDraft.sell_order_validity_days} min="0" max="365" step="1" />
             <span class="muted">{$t('settings.validityHelp')}</span>
           </div>
-          <label class="checkbox-row">
-            <input type="checkbox" bind:checked={settings.live_trading_enabled} />
+          <div class="robot-editor-actions mt-5">
+            <button class="danger btn-sm" disabled={robotBusy} on:click={() => deleteRobot(robotDraft.id)}>{$t('robots.delete')}</button>
+            <button class="btn-sm" disabled={robotBusy} on:click={saveRobot}>{robotBusy ? $t('settings.saving') : $t('settings.save')}</button>
+          </div>
+        {:else if creatingRobot}
+          <div class="field">
+            <label for="new-robot-symbol">{$t('robots.coin')}</label>
+            <SymbolAutocomplete id="new-robot-symbol" bind:value={newRobotSymbol} options={symbols} placeholder="BTCUSDT" />
+          </div>
+          <div class="robot-editor-actions mt-4">
+            <button class="btn-sm ghost" disabled={robotBusy} on:click={() => (creatingRobot = false)}>{$t('common.cancel')}</button>
+            <button class="btn-sm" disabled={robotBusy || !newRobotSymbol} on:click={createRobot}>{robotBusy ? $t('robots.creating') : $t('robots.create')}</button>
+          </div>
+        {:else}
+          {#if robots.length === 0}
+            <p class="muted mt-3">{$t('robots.none')}</p>
+          {:else}
+            <div class="robot-list mt-3">
+              {#each robots as robot (robot.id)}
+                <button class="robot-row" on:click={() => selectRobot(robot)}>
+                  <span class="badge {robot.is_enabled ? 'green' : 'amber'}">{robot.is_enabled ? $t('robots.on') : $t('robots.off')}</span>
+                  <strong class="robot-name">{robot.name}</strong>
+                  <span class="muted robot-sym">{robot.symbol}</span>
+                  <span class="spacer"></span>
+                  {#if robot.daily_purchase_enabled && robot.capital_threshold > 0}
+                    <span class="muted robot-dca">DCA {fmt(robot.capital_threshold)} · {formatHour(utcHourToLocal(robot.daily_purchase_hour_utc))}</span>
+                  {/if}
+                  <span class="robot-open">{$t('robots.open')} →</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+          {#if !canCreateRobot}<p class="warn mt-3">{$t('robots.limitReached')}</p>{/if}
+        {/if}
+
+        {#if settings}
+          <label class="checkbox-row live-row">
+            <input type="checkbox" bind:checked={settings.live_trading_enabled} on:change={saveSettings} disabled={settingsBusy} />
             {$t('settings.enableLive')}
           </label>
-          <button class="btn-block mt-5" disabled={settingsBusy} on:click={saveSettings}>
-            {settingsBusy ? $t('settings.saving') : $t('settings.save')}
-          </button>
-          {#if settingsMsg}<p class="success mt-3">✓ {settingsMsg}</p>{/if}
-          {#if settingsErr}<p class="error mt-3">{settingsErr}</p>{/if}
-        </section>
-      {/if}
+          {#if settingsErr}<p class="error mt-2">{settingsErr}</p>{/if}
+        {/if}
+      </section>
     </div>
 
     <section class="card">
@@ -575,7 +730,7 @@
             {#each executions as execution (execution.id)}
               <div class="hrow">
                 <div class="muted">{new Date(execution.executed_at).toLocaleString()}</div>
-                <div><span class="badge {execution.operation_type === 'SELL' ? 'green' : execution.operation_type.startsWith('SELL_') ? 'red' : 'amber'}">{$t('hist.act.' + execution.operation_type)}</span></div>
+                <div><span class="badge {execution.operation_type === 'SELL' ? 'green' : execution.operation_type === 'SELL_ORDER_PLACED' ? 'blue' : execution.operation_type.startsWith('SELL_') ? 'red' : 'amber'}">{$t('hist.act.' + execution.operation_type)}</span></div>
                 <div><span class="by-badge {execution.initiated_by === 'BOT' ? 'bot' : 'user'}">{execution.initiated_by === 'BOT' ? $t('hist.bot') : $t('hist.you')}</span></div>
                 <div>{execution.symbol}</div>
                 <div>{fmt(execution.unit_price)}</div>
@@ -594,7 +749,7 @@
         {/if}
       {/if}
     </section>
-  {:else}
+  {:else if activeTab === 'b3' && isAdmin}
     <PortfolioPanel />
   {/if}
 
@@ -629,8 +784,18 @@
   .bot-status.on { border-left-color: var(--green); }
   .bot-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
   .bot-status p { margin-top: var(--space-1); line-height: 1.5; }
-  .bot-status .next { color: var(--brand-soft); font-weight: 600; font-size: var(--text-sm); }
   .bot-status .warn { color: var(--amber); font-size: var(--text-sm); }
+
+  .stack-title { display: flex; flex-direction: column; }
+  .switch-inline { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; }
+  .robot-editor-actions { display: flex; justify-content: space-between; gap: var(--space-2); }
+  .robot-list { display: flex; flex-direction: column; gap: var(--space-2); }
+  .robot-row { display: flex; align-items: center; gap: var(--space-2); width: 100%; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); color: var(--text); font: inherit; height: auto; }
+  .robot-row:hover:not(:disabled) { border-color: var(--brand); filter: none; }
+  .robot-name { font-weight: 700; }
+  .robot-sym, .robot-dca { font-size: var(--text-xs); }
+  .robot-open { color: var(--brand); font-weight: 700; font-size: var(--text-xs); white-space: nowrap; }
+  .live-row { border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4); }
 
   .ops-header { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
   .subtabs { display: flex; gap: var(--space-1); }

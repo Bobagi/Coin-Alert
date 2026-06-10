@@ -15,14 +15,16 @@ import (
 // PortfolioHandler serves the B3 portfolio endpoints, backed by the investidor10 scraper.
 type PortfolioHandler struct {
 	sessionService      *service.SessionService
+	authService         *service.AuthService
 	cookieName          string
 	portfolioRepository repository.UserPortfolioRepository
 	scraperClient       *service.PortfolioScraperClient
 }
 
-func NewPortfolioHandler(sessionService *service.SessionService, cookieName string, portfolioRepository repository.UserPortfolioRepository, scraperClient *service.PortfolioScraperClient) *PortfolioHandler {
+func NewPortfolioHandler(sessionService *service.SessionService, authService *service.AuthService, cookieName string, portfolioRepository repository.UserPortfolioRepository, scraperClient *service.PortfolioScraperClient) *PortfolioHandler {
 	return &PortfolioHandler{
 		sessionService:      sessionService,
+		authService:         authService,
 		cookieName:          cookieName,
 		portfolioRepository: portfolioRepository,
 		scraperClient:       scraperClient,
@@ -51,8 +53,29 @@ func (handler *PortfolioHandler) requireUser(responseWriter http.ResponseWriter,
 	return userIdentifier, true
 }
 
-func (handler *PortfolioHandler) handleSource(responseWriter http.ResponseWriter, request *http.Request) {
+// requireAdminUser resolves the session and then enforces that the account is an admin. The whole
+// B3/Investidor10 feature is admin-only, so every portfolio endpoint goes through this.
+func (handler *PortfolioHandler) requireAdminUser(responseWriter http.ResponseWriter, request *http.Request) (int64, bool) {
 	userIdentifier, authenticated := handler.requireUser(responseWriter, request)
+	if !authenticated {
+		return 0, false
+	}
+	lookupContext, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+	defer cancel()
+	currentUser, lookupError := handler.authService.GetUserByIdentifier(lookupContext, userIdentifier)
+	if lookupError != nil || currentUser == nil {
+		writeJSONError(responseWriter, http.StatusUnauthorized, "Not authenticated.")
+		return 0, false
+	}
+	if !currentUser.IsAdmin {
+		writeJSONError(responseWriter, http.StatusForbidden, "The B3 portfolio is available to admins only.")
+		return 0, false
+	}
+	return userIdentifier, true
+}
+
+func (handler *PortfolioHandler) handleSource(responseWriter http.ResponseWriter, request *http.Request) {
+	userIdentifier, authenticated := handler.requireAdminUser(responseWriter, request)
 	if !authenticated {
 		return
 	}
@@ -110,7 +133,7 @@ func (handler *PortfolioHandler) proxyScrape(responseWriter http.ResponseWriter,
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	userIdentifier, authenticated := handler.requireUser(responseWriter, request)
+	userIdentifier, authenticated := handler.requireAdminUser(responseWriter, request)
 	if !authenticated {
 		return
 	}

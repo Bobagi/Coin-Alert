@@ -166,6 +166,7 @@ button.danger, .btn-danger { background: linear-gradient(120deg, #ff5a5f, #c92a2
 .badge.green { background: rgba(43, 214, 106, 0.16); color: var(--green); }
 .badge.red { background: rgba(255, 90, 95, 0.16); color: var(--red); }
 .badge.amber { background: rgba(250, 176, 5, 0.18); color: var(--amber); }
+.badge.blue { background: rgba(116, 192, 252, 0.18); color: #74c0fc; }
 
 /* Collapsible "How it works" help blocks. */
 .help { margin-top: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); padding: 0 var(--space-3); }

@@ -42,7 +42,7 @@ func (repository *PostgresUserRepository) CreateUser(creationContext context.Con
 		creationContext,
 		`INSERT INTO users (email, password_hash, display_name)
 		 VALUES ($1, $2, NULLIF($3, ''))
-		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, created_at, updated_at`,
+		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at`,
 		strings.TrimSpace(email),
 		passwordHash,
 		strings.TrimSpace(displayName),
@@ -65,7 +65,7 @@ func (repository *PostgresUserRepository) CreateGoogleUser(creationContext conte
 		creationContext,
 		`INSERT INTO users (email, password_hash, google_subject, display_name)
 		 VALUES ($1, NULL, $2, NULLIF($3, ''))
-		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, created_at, updated_at`,
+		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at`,
 		strings.TrimSpace(email),
 		strings.TrimSpace(googleSubject),
 		strings.TrimSpace(displayName),
@@ -84,7 +84,7 @@ func (repository *PostgresUserRepository) CreateGoogleUser(creationContext conte
 func (repository *PostgresUserRepository) FindByEmail(lookupContext context.Context, email string) (*domain.User, error) {
 	row := repository.Database.QueryRowContext(
 		lookupContext,
-		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, created_at, updated_at
+		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at
 		 FROM users WHERE LOWER(email) = LOWER($1)`,
 		strings.TrimSpace(email),
 	)
@@ -102,7 +102,7 @@ func (repository *PostgresUserRepository) FindByEmail(lookupContext context.Cont
 func (repository *PostgresUserRepository) FindByIdentifier(lookupContext context.Context, userIdentifier int64) (*domain.User, error) {
 	row := repository.Database.QueryRowContext(
 		lookupContext,
-		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, created_at, updated_at
+		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at
 		 FROM users WHERE id = $1`,
 		userIdentifier,
 	)
@@ -120,7 +120,7 @@ func (repository *PostgresUserRepository) FindByIdentifier(lookupContext context
 func (repository *PostgresUserRepository) FindByGoogleSubject(lookupContext context.Context, googleSubject string) (*domain.User, error) {
 	row := repository.Database.QueryRowContext(
 		lookupContext,
-		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, created_at, updated_at
+		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at
 		 FROM users WHERE google_subject = $1`,
 		strings.TrimSpace(googleSubject),
 	)
@@ -152,7 +152,7 @@ func (repository *PostgresUserRepository) UpdateDisplayName(updateContext contex
 	row := repository.Database.QueryRowContext(
 		updateContext,
 		`UPDATE users SET display_name = NULLIF($2, ''), updated_at = NOW() WHERE id = $1
-		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, created_at, updated_at`,
+		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at`,
 		userIdentifier,
 		strings.TrimSpace(displayName),
 	)
@@ -195,6 +195,7 @@ func scanUser(row *sql.Row) (*domain.User, error) {
 		&user.GoogleSubject,
 		&user.DisplayName,
 		&user.IsActive,
+		&user.IsAdmin,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)

@@ -7,6 +7,7 @@ export interface User {
   display_name: string
   has_password: boolean
   google_connected: boolean
+  is_admin: boolean
   created_at: string
 }
 
@@ -32,6 +33,25 @@ export interface CredentialStatus {
   active_environment: string
   masked_api_key: string
   configured_environments: string[]
+}
+
+export interface Robot {
+  id: number
+  symbol: string
+  name: string
+  capital_threshold: number
+  target_profit_percent: number
+  stop_loss_percent: number | null
+  daily_purchase_hour_utc: number
+  daily_purchase_enabled: boolean
+  sell_order_validity_days: number
+  is_enabled: boolean
+}
+
+export interface RobotsResponse {
+  robots: Robot[]
+  limit: number // 0 = unlimited (admins)
+  is_admin: boolean
 }
 
 export interface Operation {
@@ -125,6 +145,11 @@ export const api = {
       'GET',
       `/api/v1/binance/klines?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}`
     ),
+
+  getRobots: () => request<RobotsResponse>('GET', '/api/v1/robots'),
+  createRobot: (robot: Partial<Robot>) => request<Robot>('POST', '/api/v1/robots', robot),
+  updateRobot: (robot: Robot) => request<Robot>('POST', '/api/v1/robots/update', robot),
+  deleteRobot: (robotId: number) => request<{ message: string }>('POST', '/api/v1/robots/delete', { id: robotId }),
 
   getOperations: () => request<Operation[]>('GET', '/api/v1/operations'),
   getExecutions: () => request<Execution[]>('GET', '/api/v1/operations/executions'),

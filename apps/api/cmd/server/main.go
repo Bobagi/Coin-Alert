@@ -33,6 +33,7 @@ func main() {
 	binanceCredentialRepository := repository.NewPostgresBinanceCredentialRepository(postgresConnector.Database)
 	tradingOperationRepository := repository.NewPostgresTradingOperationRepository(postgresConnector.Database)
 	tradingOperationExecutionRepository := repository.NewPostgresTradingOperationExecutionRepository(postgresConnector.Database)
+	tradingRobotRepository := repository.NewPostgresTradingRobotRepository(postgresConnector.Database)
 	userPortfolioRepository := repository.NewPostgresUserPortfolioRepository(postgresConnector.Database)
 
 	// Encryption for Binance secrets at rest. Without a key, credential storage is refused at runtime.
@@ -67,16 +68,20 @@ func main() {
 	userTradingService := service.NewUserTradingService(userCredentialService, userTradingSettingsRepository, tradingOperationRepository, tradingOperationExecutionRepository)
 	operationsHandler := httpserver.NewOperationsHandler(sessionService, authHandler.CookieName, userTradingService)
 
-	automationWorker := service.NewAutomationWorker(userRepository, userCredentialService, userTradingSettingsRepository, tradingOperationRepository, tradingOperationExecutionRepository, tradingOperationExecutionRepository, userTradingService, 30*time.Second)
+	robotService := service.NewRobotService(tradingRobotRepository, userCredentialService)
+	robotsHandler := httpserver.NewRobotsHandler(sessionService, authService, authHandler.CookieName, robotService)
+
+	automationWorker := service.NewAutomationWorker(userRepository, userCredentialService, tradingRobotRepository, tradingOperationRepository, tradingOperationExecutionRepository, tradingOperationExecutionRepository, userTradingService, 30*time.Second)
 
 	portfolioScraperClient := service.NewPortfolioScraperClient(environmentValueOrDefault("SCRAPER_BASE_URL", "http://scraper:5000"))
-	portfolioHandler := httpserver.NewPortfolioHandler(sessionService, authHandler.CookieName, userPortfolioRepository, portfolioScraperClient)
+	portfolioHandler := httpserver.NewPortfolioHandler(sessionService, authService, authHandler.CookieName, userPortfolioRepository, portfolioScraperClient)
 
 	rootRouter := http.NewServeMux()
 	authHandler.RegisterRoutes(rootRouter)
 	accountHandler.RegisterRoutes(rootRouter)
 	apiHandler.RegisterRoutes(rootRouter)
 	operationsHandler.RegisterRoutes(rootRouter)
+	robotsHandler.RegisterRoutes(rootRouter)
 	portfolioHandler.RegisterRoutes(rootRouter)
 	rootRouter.HandleFunc("/health", func(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusOK)

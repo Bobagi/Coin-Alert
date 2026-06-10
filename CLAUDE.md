@@ -121,5 +121,22 @@ already a resting limit order at exchange speed); remove the now-unwired legacy 
 its `investidor10.bobagi.space` vhost were **decommissioned** in the 2026-06 hardening pass (compose
 project at `/opt/investidor10` left on disk + the vhost kept in `sites-available`, so it is reversible).
 
+### 2026-06 robots + admin (multi-bot model)
+- **Admin role** (migration 0014 `users.is_admin`, owner seeded): admins access the **B3 tab** (the
+  whole portfolio API is now admin-gated, 403 otherwise) and get unlimited robots. Exposed on `/auth/me`.
+- **Trading robots** (migration 0015 `trading_robots`): a "robot" is one automated bot per coin/pair
+  per environment (`/api/v1/robots` GET/POST · `/robots/update` · `/robots/delete`,
+  `service.RobotService`). It **replaced the single per-environment automation**: the `AutomationWorker`
+  now iterates robots (per-coin daily DCA with **per-symbol** idempotency, per-robot stop-loss) instead
+  of one `user_trading_settings` row. Existing settings rows were seeded into one robot each, preserving
+  behavior. `user_trading_settings` now only carries account-level bits used by the worker’s gate
+  (`live_trading_enabled`) + manual-buy defaults; its other fields are no longer read by automation.
+  **Standard users: 1 robot per environment; admins unlimited** (`StandardUserRobotLimitPerEnvironment`,
+  monetization hook — payment not built yet).
+- UI: the **Trade tab is first/default**; the bot-settings panel is hidden behind a **Robots list**
+  (create → click to edit). History now distinguishes a placed take-profit (`SELL_ORDER_PLACED`, blue)
+  from a completed sale (`SELL`/“Sold”, green). `GOOGLE_OAUTH_REDIRECT_URL` is set in `.env`; Google
+  sign-in turns on once `GOOGLE_OAUTH_CLIENT_ID`/`SECRET` are filled.
+
 ## Don't print secrets
 `.env`, `/root/commands_band_share.txt`, and any API keys. Never echo/commit them.

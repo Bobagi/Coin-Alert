@@ -113,7 +113,7 @@ func (handler *OperationsHandler) handleOperations(responseWriter http.ResponseW
 		}
 		operationContext, cancel := context.WithTimeout(request.Context(), 25*time.Second)
 		defer cancel()
-		operation, buyError := handler.tradingService.ExecuteBuy(operationContext, userIdentifier, domain.ExecutionInitiatorUser, payload.Symbol, payload.QuoteAmount, payload.TargetProfitPercent)
+		operation, buyError := handler.tradingService.ExecuteBuy(operationContext, userIdentifier, domain.ExecutionInitiatorUser, payload.Symbol, payload.QuoteAmount, payload.TargetProfitPercent, nil)
 		if buyError != nil {
 			writeJSONError(responseWriter, http.StatusBadRequest, buyError.Error())
 			return

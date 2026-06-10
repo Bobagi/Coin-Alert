@@ -10,6 +10,7 @@ type User struct {
 	GoogleSubject string // OIDC `sub` of the linked Google account; empty when not linked
 	DisplayName   string
 	IsActive      bool
+	IsAdmin       bool // admins access the B3 tab and get unlimited trading robots
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }

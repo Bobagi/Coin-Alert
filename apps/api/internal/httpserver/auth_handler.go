@@ -71,6 +71,7 @@ type userResponsePayload struct {
 	DisplayName     string `json:"display_name"`
 	HasPassword     bool   `json:"has_password"`
 	GoogleConnected bool   `json:"google_connected"`
+	IsAdmin         bool   `json:"is_admin"`
 	CreatedAt       string `json:"created_at"`
 }
 
@@ -362,6 +363,7 @@ func toUserResponse(user *domain.User) userResponsePayload {
 		DisplayName:     user.DisplayName,
 		HasPassword:     user.HasPassword(),
 		GoogleConnected: user.HasGoogleLinked(),
+		IsAdmin:         user.IsAdmin,
 		CreatedAt:       user.CreatedAt.Format(time.RFC3339),
 	}
 }

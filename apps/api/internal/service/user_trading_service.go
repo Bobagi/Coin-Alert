@@ -34,7 +34,7 @@ func NewUserTradingService(credentialService *UserCredentialService, settingsRep
 // ExecuteBuy places a market buy for the given quote amount and an immediate take-profit limit sell.
 // initiatedBy records whether a user or the bot triggered it. Real-money (PRODUCTION) orders are
 // refused unless the user explicitly enabled live trading.
-func (service *UserTradingService) ExecuteBuy(operationContext context.Context, userIdentifier int64, initiatedBy string, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64) (*domain.TradingOperation, error) {
+func (service *UserTradingService) ExecuteBuy(operationContext context.Context, userIdentifier int64, initiatedBy string, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64, sellOrderValidityDaysOverride *int) (*domain.TradingOperation, error) {
 	tradingPairSymbol = strings.ToUpper(strings.TrimSpace(tradingPairSymbol))
 	if tradingPairSymbol == "" {
 		return nil, errors.New("a trading pair is required")
@@ -112,8 +112,9 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	if sellError == nil && sellOrderResponse != nil {
 		identifier := strconv.FormatInt(sellOrderResponse.OrderID, 10)
 		sellOrderIdentifier = &identifier
-		sellOrderExpiresAt = sellOrderExpiry(settings)
-		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, true, nil, sellOrderIdentifier)
+		sellOrderExpiresAt = resolveSellOrderExpiry(settings, sellOrderValidityDaysOverride)
+		// Records that the take-profit ORDER was created — not that a sale happened.
+		service.logExecution(operationContext, userIdentifier, environmentName, initiatedBy, tradingPairSymbol, domain.TradingOperationTypeSellOrderPlaced, targetSellPricePerUnit, executedQuantity, targetSellPricePerUnit*executedQuantity, true, nil, sellOrderIdentifier)
 	}
 
 	operation := domain.TradingOperation{
@@ -138,8 +139,8 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 
 // ExecuteDailyPurchase performs the daily DCA buy (always bot-initiated) and records a DAILY_BUY
 // marker execution (used for the daily-buy history and to keep the daily purchase idempotent).
-func (service *UserTradingService) ExecuteDailyPurchase(operationContext context.Context, userIdentifier int64, environment string, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64) (*domain.TradingOperation, error) {
-	operation, buyError := service.ExecuteBuy(operationContext, userIdentifier, domain.ExecutionInitiatorBot, tradingPairSymbol, quoteAmount, targetProfitPercent)
+func (service *UserTradingService) ExecuteDailyPurchase(operationContext context.Context, userIdentifier int64, environment string, tradingPairSymbol string, quoteAmount float64, targetProfitPercent float64, sellOrderValidityDays int) (*domain.TradingOperation, error) {
+	operation, buyError := service.ExecuteBuy(operationContext, userIdentifier, domain.ExecutionInitiatorBot, tradingPairSymbol, quoteAmount, targetProfitPercent, &sellOrderValidityDays)
 	if buyError != nil {
 		return nil, buyError
 	}
@@ -264,7 +265,8 @@ func (service *UserTradingService) PlaceTakeProfitForOperation(operationContext 
 
 	sellOrderIdentifier := strconv.FormatInt(sellOrderResponse.OrderID, 10)
 	sellOrderExpiresAt := sellOrderExpiry(settings)
-	service.logExecution(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, operation.TradingPairSymbol, domain.TradingOperationTypeSell, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, true, nil, &sellOrderIdentifier)
+	// Records that the take-profit ORDER was (re)placed — not that a sale happened.
+	service.logExecution(operationContext, userIdentifier, environmentName, domain.ExecutionInitiatorUser, operation.TradingPairSymbol, domain.TradingOperationTypeSellOrderPlaced, targetSellPricePerUnit, operation.QuantityPurchased, targetSellPricePerUnit*operation.QuantityPurchased, true, nil, &sellOrderIdentifier)
 	if updateError := service.operationRepository.UpdateOperationSellOrderForUser(operationContext, userIdentifier, operation.Identifier, sellOrderIdentifier, targetSellPricePerUnit, sellOrderExpiresAt); updateError != nil {
 		return nil, updateError
 	}
@@ -274,12 +276,26 @@ func (service *UserTradingService) PlaceTakeProfitForOperation(operationContext 
 	return operation, nil
 }
 
-// sellOrderExpiry returns when a freshly-placed take-profit should auto-cancel, or nil for GTC.
+// sellOrderExpiry returns when a freshly-placed take-profit should auto-cancel, or nil for GTC,
+// using the account-level default validity.
 func sellOrderExpiry(settings *domain.UserTradingSettings) *time.Time {
-	if settings == nil || settings.SellOrderValidityDays <= 0 {
+	return resolveSellOrderExpiry(settings, nil)
+}
+
+// resolveSellOrderExpiry computes the take-profit auto-cancel time. overrideDays (e.g. a robot's own
+// validity) wins over the account-level setting; <= 0 means GTC (no expiry).
+func resolveSellOrderExpiry(settings *domain.UserTradingSettings, overrideDays *int) *time.Time {
+	validityDays := 0
+	if settings != nil {
+		validityDays = settings.SellOrderValidityDays
+	}
+	if overrideDays != nil {
+		validityDays = *overrideDays
+	}
+	if validityDays <= 0 {
 		return nil
 	}
-	expiry := time.Now().Add(time.Duration(settings.SellOrderValidityDays) * 24 * time.Hour)
+	expiry := time.Now().Add(time.Duration(validityDays) * 24 * time.Hour)
 	return &expiry
 }
 

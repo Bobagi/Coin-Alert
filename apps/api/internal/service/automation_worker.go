@@ -15,7 +15,7 @@ type activeUserLister interface {
 }
 
 type dailyPurchaseGuard interface {
-	HasSuccessfulExecutionOfTypeSince(loadContext context.Context, userIdentifier int64, environment string, operationType string, since time.Time) (bool, error)
+	HasSuccessfulExecutionOfTypeSince(loadContext context.Context, userIdentifier int64, environment string, operationType string, tradingPairSymbol string, since time.Time) (bool, error)
 }
 
 // AutomationWorker runs per-user background trading automation: it reconciles filled take-profit
@@ -24,7 +24,7 @@ type dailyPurchaseGuard interface {
 type AutomationWorker struct {
 	userLister          activeUserLister
 	credentialService   *UserCredentialService
-	settingsRepository  repository.UserTradingSettingsRepository
+	robotRepository     repository.TradingRobotRepository
 	operationRepository repository.UserTradingOperationRepository
 	executionRepository repository.UserTradingOperationExecutionRepository
 	purchaseGuard       dailyPurchaseGuard
@@ -35,7 +35,7 @@ type AutomationWorker struct {
 func NewAutomationWorker(
 	userLister activeUserLister,
 	credentialService *UserCredentialService,
-	settingsRepository repository.UserTradingSettingsRepository,
+	robotRepository repository.TradingRobotRepository,
 	operationRepository repository.UserTradingOperationRepository,
 	executionRepository repository.UserTradingOperationExecutionRepository,
 	purchaseGuard dailyPurchaseGuard,
@@ -48,7 +48,7 @@ func NewAutomationWorker(
 	return &AutomationWorker{
 		userLister:          userLister,
 		credentialService:   credentialService,
-		settingsRepository:  settingsRepository,
+		robotRepository:     robotRepository,
 		operationRepository: operationRepository,
 		executionRepository: executionRepository,
 		purchaseGuard:       purchaseGuard,
@@ -103,7 +103,16 @@ func (worker *AutomationWorker) monitorUser(applicationContext context.Context, 
 		return
 	}
 
-	settings, _ := worker.settingsRepository.GetByUserAndEnvironment(applicationContext, userIdentifier, environmentConfiguration.EnvironmentName)
+	// Stop-loss is configured per robot (one per coin). Map each coin to its robot's stop-loss so an
+	// open position is judged against the robot that trades that coin (or no stop-loss if none).
+	robots, _ := worker.robotRepository.ListRobotsForUser(applicationContext, userIdentifier, environmentConfiguration.EnvironmentName)
+	stopLossBySymbol := make(map[string]*float64)
+	for _, robot := range robots {
+		if robot.IsEnabled {
+			stopLossBySymbol[robot.TradingPairSymbol] = robot.StopLossPercent
+		}
+	}
+
 	tradingService := NewBinanceTradingService(*environmentConfiguration)
 	priceService := NewBinancePriceService(*environmentConfiguration)
 	priceBySymbol := make(map[string]float64)
@@ -121,11 +130,11 @@ func (worker *AutomationWorker) monitorUser(applicationContext context.Context, 
 	}
 
 	for _, openOperation := range openOperations {
-		worker.processOpenOperation(applicationContext, userIdentifier, openOperation, settings, tradingService, resolvePrice)
+		worker.processOpenOperation(applicationContext, userIdentifier, openOperation, stopLossBySymbol[openOperation.TradingPairSymbol], tradingService, resolvePrice)
 	}
 }
 
-func (worker *AutomationWorker) processOpenOperation(applicationContext context.Context, userIdentifier int64, operation domain.TradingOperation, settings *domain.UserTradingSettings, tradingService *BinanceTradingService, resolvePrice func(string) (float64, bool)) {
+func (worker *AutomationWorker) processOpenOperation(applicationContext context.Context, userIdentifier int64, operation domain.TradingOperation, stopLossPercent *float64, tradingService *BinanceTradingService, resolvePrice func(string) (float64, bool)) {
 	// 1) Reconcile the resting take-profit limit sell against Binance.
 	if operation.SellOrderIdentifier != nil {
 		orderStatus, statusError := tradingService.GetOrderStatus(applicationContext, operation.TradingPairSymbol, *operation.SellOrderIdentifier)
@@ -147,15 +156,15 @@ func (worker *AutomationWorker) processOpenOperation(applicationContext context.
 		}
 	}
 
-	// 2) Stop-loss: if configured and price fell below the threshold, sell now.
-	if settings == nil || settings.StopLossPercent == nil || *settings.StopLossPercent <= 0 {
+	// 2) Stop-loss: if this coin's robot has one configured and the price fell below it, sell now.
+	if stopLossPercent == nil || *stopLossPercent <= 0 {
 		return
 	}
 	currentPrice, pricePresent := resolvePrice(operation.TradingPairSymbol)
 	if !pricePresent {
 		return
 	}
-	stopLossThreshold := operation.PurchasePricePerUnit * (1 - (*settings.StopLossPercent / 100))
+	stopLossThreshold := operation.PurchasePricePerUnit * (1 - (*stopLossPercent / 100))
 	if currentPrice > stopLossThreshold {
 		return
 	}
@@ -289,21 +298,24 @@ func (worker *AutomationWorker) processDailyPurchases(applicationContext context
 		}
 		environmentName := environmentConfiguration.EnvironmentName
 
-		settings, _ := worker.settingsRepository.GetByUserAndEnvironment(applicationContext, userIdentifier, environmentName)
-		if settings == nil || !settings.DailyPurchaseEnabled || settings.CapitalThreshold <= 0 {
-			continue
-		}
-		if nowUTC.Hour() != settings.DailyPurchaseHourUTC {
-			continue
-		}
-		alreadyPurchased, _ := worker.purchaseGuard.HasSuccessfulExecutionOfTypeSince(applicationContext, userIdentifier, environmentName, domain.TradingOperationTypeDailyBuy, startOfDayUTC)
-		if alreadyPurchased {
-			continue
-		}
+		// Each robot runs its own daily DCA buy for its coin, independently and idempotently per day.
+		robots, _ := worker.robotRepository.ListRobotsForUser(applicationContext, userIdentifier, environmentName)
+		for _, robot := range robots {
+			if !robot.IsEnabled || !robot.DailyPurchaseEnabled || robot.CapitalThreshold <= 0 {
+				continue
+			}
+			if nowUTC.Hour() != robot.DailyPurchaseHourUTC {
+				continue
+			}
+			alreadyPurchased, _ := worker.purchaseGuard.HasSuccessfulExecutionOfTypeSince(applicationContext, userIdentifier, environmentName, domain.TradingOperationTypeDailyBuy, robot.TradingPairSymbol, startOfDayUTC)
+			if alreadyPurchased {
+				continue
+			}
 
-		log.Printf("automation: running daily purchase for user %d", userIdentifier)
-		if _, purchaseError := worker.tradingService.ExecuteDailyPurchase(applicationContext, userIdentifier, environmentName, settings.TradingPairSymbol, settings.CapitalThreshold, settings.TargetProfitPercent); purchaseError != nil {
-			log.Printf("automation: daily purchase failed for user %d: %v", userIdentifier, purchaseError)
+			log.Printf("automation: running daily purchase for user %d robot %d (%s)", userIdentifier, robot.Identifier, robot.TradingPairSymbol)
+			if _, purchaseError := worker.tradingService.ExecuteDailyPurchase(applicationContext, userIdentifier, environmentName, robot.TradingPairSymbol, robot.CapitalThreshold, robot.TargetProfitPercent, robot.SellOrderValidityDays); purchaseError != nil {
+				log.Printf("automation: daily purchase failed for user %d robot %d: %v", userIdentifier, robot.Identifier, purchaseError)
+			}
 		}
 	}
 }
