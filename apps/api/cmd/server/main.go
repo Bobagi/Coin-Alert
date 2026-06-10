@@ -35,6 +35,7 @@ func main() {
 	tradingOperationExecutionRepository := repository.NewPostgresTradingOperationExecutionRepository(postgresConnector.Database)
 	tradingRobotRepository := repository.NewPostgresTradingRobotRepository(postgresConnector.Database)
 	userPortfolioRepository := repository.NewPostgresUserPortfolioRepository(postgresConnector.Database)
+	accountDeletionAuditRepository := repository.NewPostgresAccountDeletionAuditRepository(postgresConnector.Database)
 
 	// Encryption for Binance secrets at rest. Without a key, credential storage is refused at runtime.
 	secretCipher, secretCipherError := security.NewSecretCipher(os.Getenv("CREDENTIALS_ENCRYPTION_KEY"))
@@ -48,7 +49,7 @@ func main() {
 	// Authentication.
 	passwordService := service.NewPasswordService()
 	sessionService := service.NewSessionService(userSessionRepository, 720*time.Hour)
-	authService := service.NewAuthService(userRepository, userTradingSettingsRepository, passwordService)
+	authService := service.NewAuthService(userRepository, userTradingSettingsRepository, accountDeletionAuditRepository, passwordService, secretCipher)
 	secureSessionCookies := os.Getenv("APP_SECURE_COOKIES") != "false"
 	googleOAuthService := service.NewGoogleOAuthService(
 		os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),

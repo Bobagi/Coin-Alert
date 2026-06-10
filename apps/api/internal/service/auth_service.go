@@ -8,6 +8,7 @@ import (
 
 	"coin-alert/internal/domain"
 	"coin-alert/internal/repository"
+	"coin-alert/internal/security"
 )
 
 // Authentication errors surfaced to HTTP handlers.
@@ -28,18 +29,22 @@ const maximumPasswordLength = 72
 type AuthService struct {
 	userRepository            repository.UserRepository
 	tradingSettingsRepository repository.UserTradingSettingsRepository
+	deletionAuditRepository   repository.AccountDeletionAuditRepository
 	passwordService           *PasswordService
+	secretCipher              *security.SecretCipher // may be nil; used only to fingerprint emails for the deletion audit
 	placeholderPasswordHash   string
 }
 
-func NewAuthService(userRepository repository.UserRepository, tradingSettingsRepository repository.UserTradingSettingsRepository, passwordService *PasswordService) *AuthService {
+func NewAuthService(userRepository repository.UserRepository, tradingSettingsRepository repository.UserTradingSettingsRepository, deletionAuditRepository repository.AccountDeletionAuditRepository, passwordService *PasswordService, secretCipher *security.SecretCipher) *AuthService {
 	// A real bcrypt hash compared against when an email is unknown, to keep authentication
 	// timing roughly constant and avoid leaking which emails exist.
 	placeholderPasswordHash, _ := passwordService.HashPassword("placeholder-password-for-constant-time-auth")
 	return &AuthService{
 		userRepository:            userRepository,
 		tradingSettingsRepository: tradingSettingsRepository,
+		deletionAuditRepository:   deletionAuditRepository,
 		passwordService:           passwordService,
+		secretCipher:              secretCipher,
 		placeholderPasswordHash:   placeholderPasswordHash,
 	}
 }
@@ -176,7 +181,36 @@ func (service *AuthService) DeleteAccount(deletionContext context.Context, userI
 	if existingUser.HasPassword() && !service.passwordService.VerifyPassword(existingUser.PasswordHash, password) {
 		return ErrIncorrectPassword
 	}
+
+	// Record the privacy-preserving audit row BEFORE the cascade delete erases everything. Best-effort:
+	// a failed audit must never block the user's right to delete their account.
+	if service.deletionAuditRepository != nil {
+		emailFingerprint := service.secretCipher.EmailFingerprint(existingUser.Email) // nil-safe; "" when no key
+		authMethod := deriveAuthMethod(existingUser)
+		if auditError := service.deletionAuditRepository.RecordDeletion(deletionContext, userIdentifier, emailFingerprint, authMethod, existingUser.CreatedAt); auditError != nil {
+			log.Printf("Could not record account deletion audit for user %d: %v", userIdentifier, auditError)
+		} else {
+			log.Printf("Account %d deleted (auth=%s) and recorded in the deletion audit", userIdentifier, authMethod)
+		}
+	}
+
 	return service.userRepository.DeleteUser(deletionContext, userIdentifier)
+}
+
+// deriveAuthMethod summarizes how the account could sign in, for the (non-PII) deletion audit.
+func deriveAuthMethod(user *domain.User) string {
+	hasPassword := user.HasPassword()
+	hasGoogle := user.HasGoogleLinked()
+	switch {
+	case hasPassword && hasGoogle:
+		return "both"
+	case hasGoogle:
+		return "google"
+	case hasPassword:
+		return "password"
+	default:
+		return "unknown"
+	}
 }
 
 func isPlausibleEmail(candidate string) bool {

@@ -135,8 +135,20 @@ project at `/opt/investidor10` left on disk + the vhost kept in `sites-available
   monetization hook — payment not built yet).
 - UI: the **Trade tab is first/default**; the bot-settings panel is hidden behind a **Robots list**
   (create → click to edit). History now distinguishes a placed take-profit (`SELL_ORDER_PLACED`, blue)
-  from a completed sale (`SELL`/“Sold”, green). `GOOGLE_OAUTH_REDIRECT_URL` is set in `.env`; Google
-  sign-in turns on once `GOOGLE_OAUTH_CLIENT_ID`/`SECRET` are filled.
+  from a completed sale (`SELL`/“Sold”, green). **Google sign-in is live** (`GOOGLE_OAUTH_*` set in
+  `.env`); the OAuth consent screen is in *Testing*, so test users must be allow-listed in Google Cloud.
+  `AuthenticateWithGoogle` auto-links by verified email (a manual account keeps its password).
+
+### Lock UI + environment guarantees (2026-06)
+- The **Trade** tab is **locked** (padlock left of the name, dimmed content + `LockOverlay` alert) until
+  the user has a configured Binance environment — the Connection tab stays open (it's where you set it
+  up). The **B3** tab is shown to everyone but **locked for non-admins** ("under construction"), not hidden.
+- DB enforces an environment on every trade: migration 0017 makes `binance_environment` NOT NULL +
+  CHECK `IN ('TESTNET','PRODUCTION')` on `trading_operations` and `trading_operation_executions`.
+- **Account deletion is a privacy-preserving hard delete** (migration 0018): all PII + encrypted keys are
+  erased via cascade, but one non-identifying row is written to `account_deletion_audit` — a keyed
+  **HMAC email fingerprint** (irreversible without the server key, never the raw email) + `auth_method`,
+  `account_created_at`, `had_binance_credentials`, `operation_count`. Best-effort, never blocks deletion.
 
 ## Don't print secrets
 `.env`, `/root/commands_band_share.txt`, and any API keys. Never echo/commit them.
