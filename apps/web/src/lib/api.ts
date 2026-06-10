@@ -8,11 +8,13 @@ export interface User {
   has_password: boolean
   google_connected: boolean
   is_admin: boolean
+  email_verified: boolean
   created_at: string
 }
 
 export interface AuthProviders {
   google: boolean
+  email: boolean
 }
 
 export interface TradingSettings {
@@ -101,13 +103,20 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  signup: (email: string, password: string, displayName: string) =>
-    request<User>('POST', '/auth/signup', { email, password, display_name: displayName }),
+  signup: (email: string, password: string, displayName: string, locale?: string) =>
+    request<User>('POST', '/auth/signup', { email, password, display_name: displayName, locale }),
   login: (email: string, password: string) =>
     request<User>('POST', '/auth/login', { email, password }),
   logout: () => request<{ message: string }>('POST', '/auth/logout'),
   me: () => request<User>('GET', '/auth/me'),
   getAuthProviders: () => request<AuthProviders>('GET', '/auth/providers'),
+
+  forgotPassword: (email: string, locale?: string) =>
+    request<{ message: string }>('POST', '/auth/password/forgot', { email, locale }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ message: string }>('POST', '/auth/password/reset', { token, new_password: newPassword }),
+  verifyEmail: (token: string) => request<{ message: string }>('POST', '/auth/email/verify', { token }),
+  resendVerification: () => request<{ message: string }>('POST', '/auth/email/resend'),
 
   updateProfile: (displayName: string) =>
     request<User>('PUT', '/api/v1/account/profile', { display_name: displayName }),

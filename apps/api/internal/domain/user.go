@@ -8,15 +8,19 @@ type User struct {
 	Email         string
 	PasswordHash  string // empty for accounts created via Google that have not set a password
 	GoogleSubject string // OIDC `sub` of the linked Google account; empty when not linked
-	DisplayName   string
-	IsActive      bool
-	IsAdmin       bool // admins access the B3 tab and get unlimited trading robots
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	DisplayName     string
+	IsActive        bool
+	IsAdmin         bool       // admins access the B3 tab and get unlimited trading robots
+	EmailVerifiedAt *time.Time // nil until the user confirms their email (Google sign-ups are pre-verified)
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // HasPassword reports whether the account can sign in with email + password.
 func (user *User) HasPassword() bool { return user.PasswordHash != "" }
+
+// IsEmailVerified reports whether the account's email has been confirmed.
+func (user *User) IsEmailVerified() bool { return user.EmailVerifiedAt != nil }
 
 // HasGoogleLinked reports whether a Google identity is connected to the account.
 func (user *User) HasGoogleLinked() bool { return user.GoogleSubject != "" }

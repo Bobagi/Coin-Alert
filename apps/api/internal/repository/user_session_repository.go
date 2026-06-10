@@ -12,6 +12,7 @@ type UserSessionRepository interface {
 	CreateSession(creationContext context.Context, session domain.UserSession) error
 	FindActiveByTokenHash(lookupContext context.Context, sessionTokenHash string) (*domain.UserSession, error)
 	DeleteByTokenHash(deletionContext context.Context, sessionTokenHash string) error
+	DeleteAllForUser(deletionContext context.Context, userIdentifier int64) error
 	DeleteExpiredSessions(deletionContext context.Context) (int64, error)
 }
 
@@ -73,6 +74,16 @@ func (repository *PostgresUserSessionRepository) DeleteByTokenHash(deletionConte
 		deletionContext,
 		`DELETE FROM user_sessions WHERE session_token_hash = $1`,
 		sessionTokenHash,
+	)
+	return executionError
+}
+
+// DeleteAllForUser revokes every session of a user (used after a password reset).
+func (repository *PostgresUserSessionRepository) DeleteAllForUser(deletionContext context.Context, userIdentifier int64) error {
+	_, executionError := repository.Database.ExecContext(
+		deletionContext,
+		`DELETE FROM user_sessions WHERE user_id = $1`,
+		userIdentifier,
 	)
 	return executionError
 }

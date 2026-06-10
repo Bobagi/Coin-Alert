@@ -26,6 +26,7 @@ type UserRepository interface {
 	LinkGoogleSubject(updateContext context.Context, userIdentifier int64, googleSubject string) error
 	UpdateDisplayName(updateContext context.Context, userIdentifier int64, displayName string) (*domain.User, error)
 	UpdatePasswordHash(updateContext context.Context, userIdentifier int64, passwordHash string) error
+	MarkEmailVerified(updateContext context.Context, userIdentifier int64) error
 	DeleteUser(deletionContext context.Context, userIdentifier int64) error
 }
 
@@ -42,7 +43,7 @@ func (repository *PostgresUserRepository) CreateUser(creationContext context.Con
 		creationContext,
 		`INSERT INTO users (email, password_hash, display_name)
 		 VALUES ($1, $2, NULLIF($3, ''))
-		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at`,
+		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at, email_verified_at`,
 		strings.TrimSpace(email),
 		passwordHash,
 		strings.TrimSpace(displayName),
@@ -63,9 +64,9 @@ func (repository *PostgresUserRepository) CreateUser(creationContext context.Con
 func (repository *PostgresUserRepository) CreateGoogleUser(creationContext context.Context, email string, googleSubject string, displayName string) (*domain.User, error) {
 	row := repository.Database.QueryRowContext(
 		creationContext,
-		`INSERT INTO users (email, password_hash, google_subject, display_name)
-		 VALUES ($1, NULL, $2, NULLIF($3, ''))
-		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at`,
+		`INSERT INTO users (email, password_hash, google_subject, display_name, email_verified_at)
+		 VALUES ($1, NULL, $2, NULLIF($3, ''), NOW())
+		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at, email_verified_at`,
 		strings.TrimSpace(email),
 		strings.TrimSpace(googleSubject),
 		strings.TrimSpace(displayName),
@@ -84,7 +85,7 @@ func (repository *PostgresUserRepository) CreateGoogleUser(creationContext conte
 func (repository *PostgresUserRepository) FindByEmail(lookupContext context.Context, email string) (*domain.User, error) {
 	row := repository.Database.QueryRowContext(
 		lookupContext,
-		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at
+		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at, email_verified_at
 		 FROM users WHERE LOWER(email) = LOWER($1)`,
 		strings.TrimSpace(email),
 	)
@@ -102,7 +103,7 @@ func (repository *PostgresUserRepository) FindByEmail(lookupContext context.Cont
 func (repository *PostgresUserRepository) FindByIdentifier(lookupContext context.Context, userIdentifier int64) (*domain.User, error) {
 	row := repository.Database.QueryRowContext(
 		lookupContext,
-		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at
+		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at, email_verified_at
 		 FROM users WHERE id = $1`,
 		userIdentifier,
 	)
@@ -120,7 +121,7 @@ func (repository *PostgresUserRepository) FindByIdentifier(lookupContext context
 func (repository *PostgresUserRepository) FindByGoogleSubject(lookupContext context.Context, googleSubject string) (*domain.User, error) {
 	row := repository.Database.QueryRowContext(
 		lookupContext,
-		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at
+		`SELECT id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at, email_verified_at
 		 FROM users WHERE google_subject = $1`,
 		strings.TrimSpace(googleSubject),
 	)
@@ -152,7 +153,7 @@ func (repository *PostgresUserRepository) UpdateDisplayName(updateContext contex
 	row := repository.Database.QueryRowContext(
 		updateContext,
 		`UPDATE users SET display_name = NULLIF($2, ''), updated_at = NOW() WHERE id = $1
-		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at`,
+		 RETURNING id, email, COALESCE(password_hash, ''), COALESCE(google_subject, ''), COALESCE(display_name, ''), is_active, COALESCE(is_admin, false), created_at, updated_at, email_verified_at`,
 		userIdentifier,
 		strings.TrimSpace(displayName),
 	)
@@ -177,6 +178,15 @@ func (repository *PostgresUserRepository) UpdatePasswordHash(updateContext conte
 	return executionError
 }
 
+func (repository *PostgresUserRepository) MarkEmailVerified(updateContext context.Context, userIdentifier int64) error {
+	_, executionError := repository.Database.ExecContext(
+		updateContext,
+		`UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()), updated_at = NOW() WHERE id = $1`,
+		userIdentifier,
+	)
+	return executionError
+}
+
 func (repository *PostgresUserRepository) DeleteUser(deletionContext context.Context, userIdentifier int64) error {
 	_, executionError := repository.Database.ExecContext(
 		deletionContext,
@@ -188,6 +198,7 @@ func (repository *PostgresUserRepository) DeleteUser(deletionContext context.Con
 
 func scanUser(row *sql.Row) (*domain.User, error) {
 	user := &domain.User{}
+	var emailVerifiedAt sql.NullTime
 	scanError := row.Scan(
 		&user.Identifier,
 		&user.Email,
@@ -198,9 +209,14 @@ func scanUser(row *sql.Row) (*domain.User, error) {
 		&user.IsAdmin,
 		&user.CreatedAt,
 		&user.UpdatedAt,
+		&emailVerifiedAt,
 	)
 	if scanError != nil {
 		return nil, scanError
+	}
+	if emailVerifiedAt.Valid {
+		verifiedAt := emailVerifiedAt.Time
+		user.EmailVerifiedAt = &verifiedAt
 	}
 	return user, nil
 }

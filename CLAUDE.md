@@ -149,6 +149,13 @@ project at `/opt/investidor10` left on disk + the vhost kept in `sites-available
   erased via cascade, but one non-identifying row is written to `account_deletion_audit` — a keyed
   **HMAC email fingerprint** (irreversible without the server key, never the raw email) + `auth_method`,
   `account_created_at`, `had_binance_credentials`, `operation_count`. Best-effort, never blocks deletion.
+- **Transactional email** (integrated, not a separate service): `internal/email` (`Sender` iface + Gmail
+  SMTP impl via `SMTP_*` env, no-op when unset). **Password reset** + **email verification** flows
+  (migration 0019 `auth_tokens` storing only the token hash, like sessions; `users.email_verified_at`,
+  existing users grandfathered verified, Google sign-ups pre-verified). Endpoints `/auth/password/forgot`,
+  `/auth/password/reset` (revokes all sessions), `/auth/email/verify`, `/auth/email/resend`; SPA pages
+  `#/reset` + `#/verify` and an unverified banner. Needs a Gmail **App Password** in `SMTP_PASSWORD` to
+  actually send (until then `Sender` is a no-op and `/auth/providers` reports `email:false`).
 
 ## Don't print secrets
 `.env`, `/root/commands_band_share.txt`, and any API keys. Never echo/commit them.

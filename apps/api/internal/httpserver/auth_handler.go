@@ -25,22 +25,24 @@ var errNotAuthenticated = errors.New("not authenticated")
 // AuthHandler exposes the authentication endpoints and session-cookie handling. It is
 // self-contained and registers itself onto a mux, so it does not depend on the legacy Server.
 type AuthHandler struct {
-	AuthService        *service.AuthService
-	SessionService     *service.SessionService
-	GoogleOAuthService *service.GoogleOAuthService // nil when Google sign-in is not configured
-	CookieName         string
-	OAuthStateCookie   string
-	SecureCookies      bool
+	AuthService         *service.AuthService
+	SessionService      *service.SessionService
+	GoogleOAuthService  *service.GoogleOAuthService // nil when Google sign-in is not configured
+	AccountEmailService *service.AccountEmailService
+	CookieName          string
+	OAuthStateCookie    string
+	SecureCookies       bool
 }
 
-func NewAuthHandler(authService *service.AuthService, sessionService *service.SessionService, googleOAuthService *service.GoogleOAuthService, secureCookies bool) *AuthHandler {
+func NewAuthHandler(authService *service.AuthService, sessionService *service.SessionService, googleOAuthService *service.GoogleOAuthService, accountEmailService *service.AccountEmailService, secureCookies bool) *AuthHandler {
 	return &AuthHandler{
-		AuthService:        authService,
-		SessionService:     sessionService,
-		GoogleOAuthService: googleOAuthService,
-		CookieName:         "coin_hub_session",
-		OAuthStateCookie:   "coin_hub_oauth_state",
-		SecureCookies:      secureCookies,
+		AuthService:         authService,
+		SessionService:      sessionService,
+		GoogleOAuthService:  googleOAuthService,
+		AccountEmailService: accountEmailService,
+		CookieName:          "coin_hub_session",
+		OAuthStateCookie:    "coin_hub_oauth_state",
+		SecureCookies:       secureCookies,
 	}
 }
 
@@ -52,12 +54,17 @@ func (handler *AuthHandler) RegisterRoutes(router *http.ServeMux) {
 	router.HandleFunc("/auth/providers", handler.handleProviders)
 	router.HandleFunc("/auth/google/login", handler.handleGoogleLogin)
 	router.HandleFunc("/auth/google/callback", handler.handleGoogleCallback)
+	router.HandleFunc("/auth/password/forgot", handler.handleForgotPassword)
+	router.HandleFunc("/auth/password/reset", handler.handleResetPassword)
+	router.HandleFunc("/auth/email/verify", handler.handleVerifyEmail)
+	router.HandleFunc("/auth/email/resend", handler.handleResendVerification)
 }
 
 type signupRequestPayload struct {
 	Email       string `json:"email"`
 	Password    string `json:"password"`
 	DisplayName string `json:"display_name"`
+	Locale      string `json:"locale"`
 }
 
 type loginRequestPayload struct {
@@ -72,6 +79,7 @@ type userResponsePayload struct {
 	HasPassword     bool   `json:"has_password"`
 	GoogleConnected bool   `json:"google_connected"`
 	IsAdmin         bool   `json:"is_admin"`
+	EmailVerified   bool   `json:"email_verified"`
 	CreatedAt       string `json:"created_at"`
 }
 
@@ -94,6 +102,11 @@ func (handler *AuthHandler) handleSignup(responseWriter http.ResponseWriter, req
 	if registrationError != nil {
 		handler.writeRegistrationError(responseWriter, registrationError)
 		return
+	}
+
+	// Best-effort: send the email-confirmation link. A failure must not block signup.
+	if sendError := handler.AccountEmailService.SendVerificationEmail(registrationContext, createdUser.Identifier, createdUser.Email, resolveRequestLocale(request, payload.Locale)); sendError != nil {
+		log.Printf("Could not send verification email for user %d: %v", createdUser.Identifier, sendError)
 	}
 
 	handler.issueSessionAndRespond(responseWriter, request, createdUser)
@@ -216,7 +229,10 @@ func (handler *AuthHandler) handleProviders(responseWriter http.ResponseWriter, 
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(responseWriter, http.StatusOK, map[string]bool{"google": handler.GoogleOAuthService != nil})
+	writeJSON(responseWriter, http.StatusOK, map[string]bool{
+		"google": handler.GoogleOAuthService != nil,
+		"email":  handler.AccountEmailService.EmailEnabled(),
+	})
 }
 
 func (handler *AuthHandler) handleGoogleLogin(responseWriter http.ResponseWriter, request *http.Request) {
@@ -284,6 +300,138 @@ func (handler *AuthHandler) handleGoogleCallback(responseWriter http.ResponseWri
 		return
 	}
 	http.Redirect(responseWriter, request, postLoginRedirectPath, http.StatusSeeOther)
+}
+
+// handleForgotPassword emails a password-reset link. It always responds 200 so it cannot be used to
+// probe which emails have accounts.
+func (handler *AuthHandler) handleForgotPassword(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		Email  string `json:"email"`
+		Locale string `json:"locale"`
+	}
+	if decodeError := json.NewDecoder(request.Body).Decode(&payload); decodeError != nil {
+		writeJSONError(responseWriter, http.StatusBadRequest, "Invalid request body.")
+		return
+	}
+	operationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+	if resetError := handler.AccountEmailService.RequestPasswordReset(operationContext, payload.Email, resolveRequestLocale(request, payload.Locale)); resetError != nil {
+		log.Printf("Password reset request failed: %v", resetError)
+	}
+	writeJSON(responseWriter, http.StatusOK, map[string]string{"message": "If that email has an account, a reset link is on its way."})
+}
+
+func (handler *AuthHandler) handleResetPassword(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"new_password"`
+	}
+	if decodeError := json.NewDecoder(request.Body).Decode(&payload); decodeError != nil {
+		writeJSONError(responseWriter, http.StatusBadRequest, "Invalid request body.")
+		return
+	}
+	if payload.Token == "" {
+		writeJSONError(responseWriter, http.StatusBadRequest, "A reset token is required.")
+		return
+	}
+	operationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+	resetError := handler.AccountEmailService.ConfirmPasswordReset(operationContext, payload.Token, payload.NewPassword)
+	switch {
+	case resetError == nil:
+		writeJSON(responseWriter, http.StatusOK, map[string]string{"message": "Password updated. You can sign in now."})
+	case errors.Is(resetError, repository.ErrAuthTokenInvalid):
+		writeJSONError(responseWriter, http.StatusBadRequest, "This reset link is invalid or has expired. Request a new one.")
+	case errors.Is(resetError, service.ErrWeakPassword):
+		writeJSONError(responseWriter, http.StatusBadRequest, service.ErrWeakPassword.Error())
+	default:
+		log.Printf("Password reset failed: %v", resetError)
+		writeJSONError(responseWriter, http.StatusInternalServerError, "Could not reset your password.")
+	}
+}
+
+func (handler *AuthHandler) handleVerifyEmail(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		Token string `json:"token"`
+	}
+	if decodeError := json.NewDecoder(request.Body).Decode(&payload); decodeError != nil {
+		writeJSONError(responseWriter, http.StatusBadRequest, "Invalid request body.")
+		return
+	}
+	if payload.Token == "" {
+		writeJSONError(responseWriter, http.StatusBadRequest, "A verification token is required.")
+		return
+	}
+	operationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+	verifyError := handler.AccountEmailService.ConfirmEmailVerification(operationContext, payload.Token)
+	switch {
+	case verifyError == nil:
+		writeJSON(responseWriter, http.StatusOK, map[string]string{"message": "Email confirmed."})
+	case errors.Is(verifyError, repository.ErrAuthTokenInvalid):
+		writeJSONError(responseWriter, http.StatusBadRequest, "This confirmation link is invalid or has expired.")
+	default:
+		log.Printf("Email verification failed: %v", verifyError)
+		writeJSONError(responseWriter, http.StatusInternalServerError, "Could not confirm your email.")
+	}
+}
+
+func (handler *AuthHandler) handleResendVerification(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	userIdentifier, authenticationError := handler.ResolveAuthenticatedUserIdentifier(request)
+	if authenticationError != nil {
+		writeJSONError(responseWriter, http.StatusUnauthorized, "Not authenticated.")
+		return
+	}
+	operationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
+	defer cancel()
+	currentUser, lookupError := handler.AuthService.GetUserByIdentifier(operationContext, userIdentifier)
+	if lookupError != nil {
+		writeJSONError(responseWriter, http.StatusUnauthorized, "Not authenticated.")
+		return
+	}
+	if currentUser.IsEmailVerified() {
+		writeJSON(responseWriter, http.StatusOK, map[string]string{"message": "Your email is already confirmed."})
+		return
+	}
+	if sendError := handler.AccountEmailService.SendVerificationEmail(operationContext, userIdentifier, currentUser.Email, resolveRequestLocale(request, "")); sendError != nil {
+		log.Printf("Could not resend verification email for user %d: %v", userIdentifier, sendError)
+	}
+	writeJSON(responseWriter, http.StatusOK, map[string]string{"message": "Verification email sent."})
+}
+
+// resolveRequestLocale picks the email language: the payload's locale if supported, otherwise the
+// browser's Accept-Language, otherwise pt-BR.
+func resolveRequestLocale(request *http.Request, payloadLocale string) string {
+	if isSupportedLocale(payloadLocale) {
+		return payloadLocale
+	}
+	acceptLanguage := strings.ToLower(request.Header.Get("Accept-Language"))
+	for _, candidate := range []string{"pt", "es", "en"} {
+		if strings.HasPrefix(acceptLanguage, candidate) {
+			return candidate
+		}
+	}
+	return "pt"
+}
+
+func isSupportedLocale(locale string) bool {
+	return locale == "pt" || locale == "en" || locale == "es"
 }
 
 func (handler *AuthHandler) setStateCookie(responseWriter http.ResponseWriter, state string) {
@@ -364,6 +512,7 @@ func toUserResponse(user *domain.User) userResponsePayload {
 		HasPassword:     user.HasPassword(),
 		GoogleConnected: user.HasGoogleLinked(),
 		IsAdmin:         user.IsAdmin,
+		EmailVerified:   user.IsEmailVerified(),
 		CreatedAt:       user.CreatedAt.Format(time.RFC3339),
 	}
 }

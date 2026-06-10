@@ -11,6 +11,7 @@ import (
 
 	"coin-alert/internal/config"
 	"coin-alert/internal/database"
+	"coin-alert/internal/email"
 	"coin-alert/internal/httpserver"
 	"coin-alert/internal/repository"
 	"coin-alert/internal/security"
@@ -36,6 +37,7 @@ func main() {
 	tradingRobotRepository := repository.NewPostgresTradingRobotRepository(postgresConnector.Database)
 	userPortfolioRepository := repository.NewPostgresUserPortfolioRepository(postgresConnector.Database)
 	accountDeletionAuditRepository := repository.NewPostgresAccountDeletionAuditRepository(postgresConnector.Database)
+	authTokenRepository := repository.NewPostgresAuthTokenRepository(postgresConnector.Database)
 
 	// Encryption for Binance secrets at rest. Without a key, credential storage is refused at runtime.
 	secretCipher, secretCipherError := security.NewSecretCipher(os.Getenv("CREDENTIALS_ENCRYPTION_KEY"))
@@ -59,7 +61,9 @@ func main() {
 	if googleOAuthService != nil {
 		log.Println("Google sign-in is enabled")
 	}
-	authHandler := httpserver.NewAuthHandler(authService, sessionService, googleOAuthService, secureSessionCookies)
+	emailSender := email.NewSenderFromEnv()
+	accountEmailService := service.NewAccountEmailService(userRepository, authTokenRepository, userSessionRepository, passwordService, emailSender, environmentValueOrDefault("APP_BASE_URL", "https://coin.bobagi.space"))
+	authHandler := httpserver.NewAuthHandler(authService, sessionService, googleOAuthService, accountEmailService, secureSessionCookies)
 	accountHandler := httpserver.NewAccountHandler(authService, sessionService, authHandler.CookieName, secureSessionCookies)
 
 	// Per-user trading configuration and Binance credentials.
