@@ -479,11 +479,11 @@
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" aria-selected={activeTab === 'trade'} class:active={activeTab === 'trade'} on:click={() => (activeTab = 'trade')}>
-      {$t('tab.trade')}{#if tradeLocked}<span class="tab-lock" title={$t('lock.tradeMsg')}>🔒</span>{/if}
+      {#if tradeLocked}<span class="tab-lock" title={$t('lock.tradeMsg')}>🔒</span>{/if}{$t('tab.trade')}
     </button>
     <button class="tab" role="tab" aria-selected={activeTab === 'connection'} class:active={activeTab === 'connection'} on:click={() => (activeTab = 'connection')}>{$t('tab.connection')}</button>
     <button class="tab" role="tab" aria-selected={activeTab === 'b3'} class:active={activeTab === 'b3'} on:click={() => (activeTab = 'b3')}>
-      {$t('tab.b3')}{#if !isAdmin}<span class="tab-lock" title={$t('lock.b3Msg')}>🔒</span>{/if}
+      {#if !isAdmin}<span class="tab-lock" title={$t('lock.b3Msg')}>🔒</span>{/if}{$t('tab.b3')}
     </button>
   </div>
 
@@ -887,8 +887,10 @@
   .tab { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); font-weight: 700; height: auto; padding: var(--space-3) var(--space-4); }
   .tab:hover:not(:disabled) { filter: none; color: var(--text); }
   .tab.active { color: var(--brand); border-bottom-color: var(--brand); }
-  .tab-lock { margin-left: var(--space-1); font-size: 0.8em; }
+  .tab-lock { margin-right: var(--space-1); font-size: 0.8em; }
   .locked-wrap { position: relative; }
+  /* Restore the page's vertical rhythm: the wrapped sections need the same column gap stack-lg gives. */
+  .locked-content { display: flex; flex-direction: column; gap: var(--space-5); }
   .locked-content.dimmed { pointer-events: none; opacity: 0.5; filter: grayscale(0.4); user-select: none; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-4); align-items: start; }
