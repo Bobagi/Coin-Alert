@@ -10,7 +10,18 @@
 
   let activeTab: 'connection' | 'trade' | 'b3' = 'trade'
   let opsView: 'positions' | 'history' = 'positions'
+  let allocView: 'allocation' | 'profit' = 'allocation'
   const environments = ['TESTNET', 'PRODUCTION']
+
+  // Common quote assets (the coin you pay WITH), longest first so e.g. FDUSD wins over USD.
+  const knownQuoteAssets = ['FDUSD', 'USDT', 'USDC', 'BUSD', 'TUSD', 'DAI', 'BRL', 'EUR', 'GBP', 'AUD', 'TRY', 'BTC', 'ETH', 'BNB']
+  function quoteAssetOf(symbol: string): string {
+    const upper = (symbol || '').toUpperCase()
+    for (const quote of knownQuoteAssets) {
+      if (upper.length > quote.length && upper.endsWith(quote)) return quote
+    }
+    return ''
+  }
 
   let settings: TradingSettings | null = null
   let credentials: CredentialStatus | null = null
@@ -107,6 +118,31 @@
   $: selectedRobot = robots.find((robot) => robot.id === selectedRobotId) || null
   $: canCreateRobot = robotLimit === 0 || robots.length < robotLimit
   $: robotProductionNeedsLive = credentials?.active_environment === 'PRODUCTION' && !!settings && !settings.live_trading_enabled
+
+  // Profitability (for the active environment). Costs/proceeds come from the operations table (the
+  // source of truth); the site-vs-robots split comes from executions (initiated_by). Buys = money in;
+  // completed sales (SELL) = money back; SELL_ORDER_PLACED records are just placed orders, not sales.
+  $: investedTotal = operations.reduce((sum, op) => sum + op.quantity * op.purchase_price_per_unit, 0)
+  $: openCostTotal = operations
+    .filter((op) => op.status === 'OPEN')
+    .reduce((sum, op) => sum + op.quantity * op.purchase_price_per_unit, 0)
+  $: soldOperations = operations.filter((op) => op.status === 'SOLD' && op.sell_price_per_unit != null)
+  $: realizedProceeds = soldOperations.reduce((sum, op) => sum + op.quantity * (op.sell_price_per_unit as number), 0)
+  $: realizedCost = soldOperations.reduce((sum, op) => sum + op.quantity * op.purchase_price_per_unit, 0)
+  $: realizedResult = realizedProceeds - realizedCost
+  $: spentBySite = executions.filter((e) => e.success && e.operation_type === 'BUY' && e.initiated_by === 'USER').reduce((s, e) => s + e.total_value, 0)
+  $: spentByRobots = executions.filter((e) => e.success && e.operation_type === 'BUY' && e.initiated_by === 'BOT').reduce((s, e) => s + e.total_value, 0)
+  $: earnedBySite = executions.filter((e) => e.success && e.operation_type === 'SELL' && e.initiated_by === 'USER').reduce((s, e) => s + e.total_value, 0)
+  $: earnedByRobots = executions.filter((e) => e.success && e.operation_type === 'SELL' && e.initiated_by === 'BOT').reduce((s, e) => s + e.total_value, 0)
+  $: acquiredBySymbol = aggregateQuantity(operations)
+  $: hasProfitData = operations.length > 0
+  function aggregateQuantity(list: Operation[]): { symbol: string; quantity: number }[] {
+    const totals: Record<string, number> = {}
+    for (const op of list) totals[op.symbol] = (totals[op.symbol] || 0) + op.quantity
+    return Object.entries(totals)
+      .map(([symbol, quantity]) => ({ symbol, quantity }))
+      .sort((a, b) => b.quantity - a.quantity)
+  }
   $: needsLiveWarning = botActive && credentials?.active_environment === 'PRODUCTION' && !!settings && !settings.live_trading_enabled
   $: nextRun = nextDailyRun(localHourToUtc(dailyHourLocal))
   $: nextRunLabel = nextRun.toLocaleString($locale, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
@@ -310,6 +346,27 @@
     }
   }
 
+  let robotMessageTimer: ReturnType<typeof setTimeout> | undefined
+  // Success messages auto-dismiss so they don't linger (e.g. after going back to the list).
+  function setRobotMessage(message: string) {
+    robotMsg = message
+    if (robotMessageTimer) clearTimeout(robotMessageTimer)
+    if (message) robotMessageTimer = setTimeout(() => (robotMsg = ''), 4000)
+  }
+
+  function clearRobotMessages() {
+    robotMsg = ''
+    robotErr = ''
+    if (robotMessageTimer) clearTimeout(robotMessageTimer)
+  }
+
+  function backToRobotList() {
+    selectedRobotId = null
+    robotDraft = null
+    creatingRobot = false
+    clearRobotMessages()
+  }
+
   async function loadRobots() {
     try {
       const response = await api.getRobots()
@@ -325,8 +382,7 @@
     robotDailyHourLocal = utcHourToLocal(robot.daily_purchase_hour_utc)
     selectedRobotId = robot.id
     creatingRobot = false
-    robotMsg = ''
-    robotErr = ''
+    clearRobotMessages()
   }
 
   async function createRobot() {
@@ -346,8 +402,8 @@
         is_enabled: true
       })
       await loadRobots()
-      robotMsg = $t('robots.created')
       selectRobot(robots.find((robot) => robot.id === created.id) || created)
+      setRobotMessage($t('robots.created'))
     } catch (e) {
       robotErr = (e as Error).message
     } finally {
@@ -366,7 +422,7 @@
       const updated = await api.updateRobot(robotDraft)
       await loadRobots()
       robotDraft = { ...updated }
-      robotMsg = $t('robots.saved')
+      setRobotMessage($t('robots.saved'))
     } catch (e) {
       robotErr = (e as Error).message
     } finally {
@@ -384,7 +440,7 @@
       selectedRobotId = null
       robotDraft = null
       await loadRobots()
-      robotMsg = $t('robots.deleted')
+      setRobotMessage($t('robots.deleted'))
     } catch (e) {
       robotErr = (e as Error).message
     } finally {
@@ -498,6 +554,9 @@
           {#if tradeFilters && tradeFilters.min_notional > 0}
             <span class="muted">{$t('buy.minOrder', { min: fmt(tradeFilters.min_notional) })}</span>
           {/if}
+          {#if quoteAssetOf(tradeSymbol)}
+            <span class="muted">{$t('buy.spotHint', { quote: quoteAssetOf(tradeSymbol) })}</span>
+          {/if}
           {#if belowMinimum && tradeFilters}<span class="error">{$t('buy.belowMin', { min: fmt(tradeFilters.min_notional) })}</span>{/if}
         </div>
         <div class="field">
@@ -518,7 +577,7 @@
             <span class="card-subtitle">{$t('robots.subtitle')}</span>
           </div>
           {#if selectedRobot && robotDraft}
-            <button class="btn-sm ghost" on:click={() => { selectedRobotId = null; robotDraft = null }}>{$t('robots.back')}</button>
+            <button class="btn-sm ghost" on:click={backToRobotList}>{$t('robots.back')}</button>
           {:else if !creatingRobot}
             <button class="btn-sm" disabled={!canCreateRobot} on:click={() => { creatingRobot = true; robotErr = ''; robotMsg = '' }}>{$t('robots.new')}</button>
           {/if}
@@ -553,6 +612,7 @@
             <div class="field" style="margin-top:0">
               <label for="robot-coin">{$t('robots.coin')}</label>
               <input id="robot-coin" value={robotDraft.symbol} disabled />
+              {#if quoteAssetOf(robotDraft.symbol)}<span class="muted">{$t('buy.spotHint', { quote: quoteAssetOf(robotDraft.symbol) })}</span>{/if}
             </div>
             <label class="checkbox-row" style="margin-top:0">
               <input type="checkbox" bind:checked={robotDraft.daily_purchase_enabled} />
@@ -632,13 +692,53 @@
       </section>
     </div>
 
-    <section class="card">
-      <div class="card-header">
-        <span class="card-title">{$t('alloc.title')}</span>
+    <details class="card alloc-card" open>
+      <summary class="alloc-summary">
+        <span class="start-caret">▸</span>
+        <span class="card-title">{$t('alloc.section')}</span>
+      </summary>
+
+      <div class="subtabs mt-4">
+        <button class="subtab" class:active={allocView === 'allocation'} on:click={() => (allocView = 'allocation')}>{$t('alloc.tabAllocation')}</button>
+        <button class="subtab" class:active={allocView === 'profit'} on:click={() => (allocView = 'profit')}>{$t('alloc.tabProfit')}</button>
       </div>
-      <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('alloc.help')}</p></details>
-      <AllocationPanel {operations} />
-    </section>
+
+      {#if allocView === 'allocation'}
+        <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('alloc.help')}</p></details>
+        <AllocationPanel {operations} />
+      {:else}
+        <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('prof.help')}</p></details>
+        {#if !hasProfitData}
+          <p class="muted mt-3">{$t('prof.none')}</p>
+        {:else}
+          <div class="prof-grid mt-3">
+            <div class="prof-card">
+              <span class="prof-label">{$t('prof.spent')}</span>
+              <span class="prof-value">{fmt(investedTotal)}</span>
+              <span class="prof-split">{$t('prof.you')}: {fmt(spentBySite)} · {$t('prof.robots')}: {fmt(spentByRobots)}</span>
+            </div>
+            <div class="prof-card">
+              <span class="prof-label">{$t('prof.received')}</span>
+              <span class="prof-value">{fmt(realizedProceeds)}</span>
+              <span class="prof-split">{$t('prof.you')}: {fmt(earnedBySite)} · {$t('prof.robots')}: {fmt(earnedByRobots)}</span>
+            </div>
+            <div class="prof-card">
+              <span class="prof-label">{$t('prof.realized')}</span>
+              <span class="prof-value {realizedResult > 0 ? 'pos' : realizedResult < 0 ? 'neg' : ''}">{realizedResult >= 0 ? '+' : ''}{fmt(realizedResult)}</span>
+              <span class="prof-split">{$t('prof.openCost')}: {fmt(openCostTotal)}</span>
+            </div>
+          </div>
+          <div class="prof-coins mt-4">
+            <span class="prof-label">{$t('prof.acquired')}</span>
+            <div class="coin-chips">
+              {#each acquiredBySymbol as item (item.symbol)}
+                <span class="coin-chip">{fmt(item.quantity)} {item.symbol}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {/if}
+    </details>
 
     <section class="card">
       <div class="card-header ops-header">
@@ -796,6 +896,20 @@
   .robot-sym, .robot-dca { font-size: var(--text-xs); }
   .robot-open { color: var(--brand); font-weight: 700; font-size: var(--text-xs); white-space: nowrap; }
   .live-row { border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4); }
+
+  .alloc-card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: var(--space-2); }
+  .alloc-card > summary::-webkit-details-marker { display: none; }
+  .alloc-card[open] > summary .start-caret { transform: rotate(90deg); }
+  .prof-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); }
+  .prof-card { display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); }
+  .prof-label { color: var(--muted); font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+  .prof-value { font-size: var(--text-lg); font-weight: 800; }
+  .prof-value.pos { color: var(--green); }
+  .prof-value.neg { color: var(--red); }
+  .prof-split { color: var(--muted); font-size: var(--text-xs); }
+  .prof-coins { display: flex; flex-direction: column; gap: var(--space-2); }
+  .coin-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .coin-chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 2px var(--space-3); font-size: var(--text-sm); font-weight: 700; }
 
   .ops-header { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
   .subtabs { display: flex; gap: var(--space-1); }
