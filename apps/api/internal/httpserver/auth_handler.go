@@ -529,6 +529,21 @@ func writeJSONError(responseWriter http.ResponseWriter, statusCode int, message 
 	writeJSON(responseWriter, statusCode, map[string]string{"error": message})
 }
 
+// enforceEmailVerified loads the user and writes 403 if the email is not confirmed yet. Used to block
+// sensitive actions (connecting Binance, trading, robots) until the account confirms its email.
+func enforceEmailVerified(operationContext context.Context, responseWriter http.ResponseWriter, authService *service.AuthService, userIdentifier int64) bool {
+	currentUser, lookupError := authService.GetUserByIdentifier(operationContext, userIdentifier)
+	if lookupError != nil || currentUser == nil {
+		writeJSONError(responseWriter, http.StatusUnauthorized, "Not authenticated.")
+		return false
+	}
+	if !currentUser.IsEmailVerified() {
+		writeJSONError(responseWriter, http.StatusForbidden, "Confirm your email before using this feature.")
+		return false
+	}
+	return true
+}
+
 func clientIPAddress(request *http.Request) string {
 	forwardedFor := request.Header.Get("X-Forwarded-For")
 	if forwardedFor != "" {

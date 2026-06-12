@@ -68,10 +68,10 @@ func main() {
 
 	// Per-user trading configuration and Binance credentials.
 	userCredentialService := service.NewUserCredentialService(binanceCredentialRepository, secretCipher, testnetBaseURL, productionBaseURL)
-	apiHandler := httpserver.NewAPIHandler(sessionService, authHandler.CookieName, userTradingSettingsRepository, userCredentialService, testnetBaseURL, productionBaseURL)
+	apiHandler := httpserver.NewAPIHandler(sessionService, authService, authHandler.CookieName, userTradingSettingsRepository, userCredentialService, testnetBaseURL, productionBaseURL)
 
 	userTradingService := service.NewUserTradingService(userCredentialService, userTradingSettingsRepository, tradingOperationRepository, tradingOperationExecutionRepository)
-	operationsHandler := httpserver.NewOperationsHandler(sessionService, authHandler.CookieName, userTradingService)
+	operationsHandler := httpserver.NewOperationsHandler(sessionService, authService, authHandler.CookieName, userTradingService)
 
 	robotService := service.NewRobotService(tradingRobotRepository, userCredentialService)
 	robotsHandler := httpserver.NewRobotsHandler(sessionService, authService, authHandler.CookieName, robotService)

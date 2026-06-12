@@ -17,6 +17,7 @@ import (
 // resolves the current user from the session cookie before doing anything.
 type APIHandler struct {
 	sessionService            *service.SessionService
+	authService               *service.AuthService
 	cookieName                string
 	tradingSettingsRepository repository.UserTradingSettingsRepository
 	credentialService         *service.UserCredentialService
@@ -24,9 +25,10 @@ type APIHandler struct {
 	productionBaseURL         string
 }
 
-func NewAPIHandler(sessionService *service.SessionService, cookieName string, tradingSettingsRepository repository.UserTradingSettingsRepository, credentialService *service.UserCredentialService, testnetBaseURL string, productionBaseURL string) *APIHandler {
+func NewAPIHandler(sessionService *service.SessionService, authService *service.AuthService, cookieName string, tradingSettingsRepository repository.UserTradingSettingsRepository, credentialService *service.UserCredentialService, testnetBaseURL string, productionBaseURL string) *APIHandler {
 	return &APIHandler{
 		sessionService:            sessionService,
+		authService:               authService,
 		cookieName:                cookieName,
 		tradingSettingsRepository: tradingSettingsRepository,
 		credentialService:         credentialService,
@@ -173,6 +175,9 @@ func (handler *APIHandler) handleCredentials(responseWriter http.ResponseWriter,
 		}
 		operationContext, cancel := context.WithTimeout(request.Context(), 12*time.Second)
 		defer cancel()
+		if !enforceEmailVerified(operationContext, responseWriter, handler.authService, userIdentifier) {
+			return
+		}
 		saveError := handler.credentialService.SaveAndValidate(operationContext, userIdentifier, payload.APIKey, payload.APISecret, payload.Environment)
 		if saveError != nil {
 			if errors.Is(saveError, service.ErrCredentialEncryptionUnavailable) {
@@ -209,6 +214,9 @@ func (handler *APIHandler) handleActivateEnvironment(responseWriter http.Respons
 
 	operationContext, cancel := context.WithTimeout(request.Context(), 5*time.Second)
 	defer cancel()
+	if !enforceEmailVerified(operationContext, responseWriter, handler.authService, userIdentifier) {
+		return
+	}
 	if activationError := handler.credentialService.ActivateEnvironment(operationContext, userIdentifier, payload.Environment); activationError != nil {
 		writeJSONError(responseWriter, http.StatusBadRequest, activationError.Error())
 		return

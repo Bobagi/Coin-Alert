@@ -9,7 +9,7 @@
   import TopNav from './lib/TopNav.svelte'
   import ResetPassword from './lib/ResetPassword.svelte'
   import VerifyEmail from './lib/VerifyEmail.svelte'
-  import VerifyBanner from './lib/VerifyBanner.svelte'
+  import VerifyWall from './lib/VerifyWall.svelte'
 
   let loading = true
   let emailEnabled = false
@@ -37,14 +37,16 @@
 {:else if loading}
   <div class="center muted">{$t('app.loading')}</div>
 {:else if $currentUser}
-  <TopNav />
   {#if emailEnabled && !$currentUser.email_verified}
-    <VerifyBanner />
-  {/if}
-  {#if $route === 'account'}
-    <AccountSettings />
+    <!-- Hard block: an unverified account cannot use the app until it confirms its email. -->
+    <VerifyWall />
   {:else}
-    <Dashboard />
+    <TopNav />
+    {#if $route === 'account'}
+      <AccountSettings />
+    {:else}
+      <Dashboard />
+    {/if}
   {/if}
 {:else}
   <Login />

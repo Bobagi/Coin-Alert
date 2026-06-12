@@ -16,13 +16,15 @@ import (
 // OperationsHandler serves the user-scoped trading endpoints (operations, executions, open orders).
 type OperationsHandler struct {
 	sessionService *service.SessionService
+	authService    *service.AuthService
 	cookieName     string
 	tradingService *service.UserTradingService
 }
 
-func NewOperationsHandler(sessionService *service.SessionService, cookieName string, tradingService *service.UserTradingService) *OperationsHandler {
+func NewOperationsHandler(sessionService *service.SessionService, authService *service.AuthService, cookieName string, tradingService *service.UserTradingService) *OperationsHandler {
 	return &OperationsHandler{
 		sessionService: sessionService,
+		authService:    authService,
 		cookieName:     cookieName,
 		tradingService: tradingService,
 	}
@@ -113,6 +115,9 @@ func (handler *OperationsHandler) handleOperations(responseWriter http.ResponseW
 		}
 		operationContext, cancel := context.WithTimeout(request.Context(), 25*time.Second)
 		defer cancel()
+		if !enforceEmailVerified(operationContext, responseWriter, handler.authService, userIdentifier) {
+			return
+		}
 		operation, buyError := handler.tradingService.ExecuteBuy(operationContext, userIdentifier, domain.ExecutionInitiatorUser, payload.Symbol, payload.QuoteAmount, payload.TargetProfitPercent, nil)
 		if buyError != nil {
 			writeJSONError(responseWriter, http.StatusBadRequest, buyError.Error())
@@ -151,6 +156,9 @@ func (handler *OperationsHandler) handleSellOperation(responseWriter http.Respon
 
 	operationContext, cancel := context.WithTimeout(request.Context(), 25*time.Second)
 	defer cancel()
+	if !enforceEmailVerified(operationContext, responseWriter, handler.authService, userIdentifier) {
+		return
+	}
 	operation, sellError := handler.tradingService.CloseOperationNow(operationContext, userIdentifier, payload.OperationID)
 	if sellError != nil {
 		if errors.Is(sellError, repository.ErrOperationNotFound) {
@@ -185,6 +193,9 @@ func (handler *OperationsHandler) handlePlaceSell(responseWriter http.ResponseWr
 
 	operationContext, cancel := context.WithTimeout(request.Context(), 25*time.Second)
 	defer cancel()
+	if !enforceEmailVerified(operationContext, responseWriter, handler.authService, userIdentifier) {
+		return
+	}
 	operation, placeError := handler.tradingService.PlaceTakeProfitForOperation(operationContext, userIdentifier, payload.OperationID)
 	if placeError != nil {
 		if errors.Is(placeError, repository.ErrOperationNotFound) {

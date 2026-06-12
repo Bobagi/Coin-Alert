@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/smtp"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -137,9 +138,13 @@ func (sender *SMTPSender) buildMIME(message Message) []byte {
 	boundary := "coinhub-" + randomBoundary()
 
 	writeHeader(&builder, "From", fmt.Sprintf("%s <%s>", mime.QEncoding.Encode("utf-8", sender.fromName), sender.fromAddress))
+	writeHeader(&builder, "Reply-To", sender.fromAddress)
 	writeHeader(&builder, "To", message.To)
 	writeHeader(&builder, "Subject", mime.QEncoding.Encode("utf-8", message.Subject))
 	writeHeader(&builder, "Date", time.Now().Format(time.RFC1123Z))
+	writeHeader(&builder, "Message-ID", sender.messageID())
+	// Mark as automated transactional mail (RFC 3834) — improves how filters classify it.
+	writeHeader(&builder, "Auto-Submitted", "auto-generated")
 	writeHeader(&builder, "MIME-Version", "1.0")
 	writeHeader(&builder, "Content-Type", fmt.Sprintf("multipart/alternative; boundary=%q", boundary))
 	builder.WriteString("\r\n")
@@ -167,6 +172,14 @@ func writeBodyPart(builder *bytes.Buffer, boundary string, contentType string, b
 	_, _ = quotedWriter.Write([]byte(body))
 	_ = quotedWriter.Close()
 	builder.WriteString("\r\n")
+}
+
+func (sender *SMTPSender) messageID() string {
+	domain := sender.fromAddress
+	if atIndex := strings.LastIndex(domain, "@"); atIndex >= 0 {
+		domain = domain[atIndex+1:]
+	}
+	return fmt.Sprintf("<%s.%d@%s>", randomBoundary(), time.Now().UnixNano(), domain)
 }
 
 func randomBoundary() string {

@@ -154,8 +154,11 @@ project at `/opt/investidor10` left on disk + the vhost kept in `sites-available
   (migration 0019 `auth_tokens` storing only the token hash, like sessions; `users.email_verified_at`,
   existing users grandfathered verified, Google sign-ups pre-verified). Endpoints `/auth/password/forgot`,
   `/auth/password/reset` (revokes all sessions), `/auth/email/verify`, `/auth/email/resend`; SPA pages
-  `#/reset` + `#/verify` and an unverified banner. Needs a Gmail **App Password** in `SMTP_PASSWORD` to
-  actually send (until then `Sender` is a no-op and `/auth/providers` reports `email:false`).
+  `#/reset` + `#/verify`. **Email verification is enforced**: an unverified account hits a full-screen
+  "confirm your email" wall (`VerifyWall`) and the API also returns 403 on connect-Binance / trade /
+  robot endpoints (`enforceEmailVerified`). Sending is live (`SMTP_PASSWORD` set with a Gmail App
+  Password); the email carries `Reply-To`/`Message-ID`/`Auto-Submitted` headers. If unset, `Sender` is
+  a no-op, `/auth/providers` reports `email:false`, and verification is not enforced.
 
 ## Don't print secrets
 `.env`, `/root/commands_band_share.txt`, and any API keys. Never echo/commit them.
