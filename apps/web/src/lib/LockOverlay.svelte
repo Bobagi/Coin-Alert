@@ -1,12 +1,14 @@
 <script lang="ts">
   // A padlock overlay that covers a tab's content: the content stays visible (dimmed) but no control
   // works; clicking anywhere shows the alert message explaining why it is locked.
+  import { showModalMessage } from './stores'
+
   export let message: string
   export let ctaLabel = ''
   export let onCta: (() => void) | null = null
 
   function notify() {
-    if (typeof window !== 'undefined') window.alert(message)
+    showModalMessage(message)
   }
 </script>
 

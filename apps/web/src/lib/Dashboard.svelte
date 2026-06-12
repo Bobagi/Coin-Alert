@@ -4,6 +4,7 @@
   import { binanceStatus, currentUser } from './stores'
   import { t, locale } from './i18n'
   import AllocationPanel from './AllocationPanel.svelte'
+  import ProfitabilityPanel from './ProfitabilityPanel.svelte'
   import PortfolioPanel from './PortfolioPanel.svelte'
   import LegalFooter from './LegalFooter.svelte'
   import SymbolAutocomplete from './SymbolAutocomplete.svelte'
@@ -745,6 +746,9 @@
                 <span class="coin-chip">{fmt(item.quantity)} {item.symbol}</span>
               {/each}
             </div>
+          </div>
+          <div class="prof-chart-block mt-5">
+            <ProfitabilityPanel {operations} />
           </div>
         {/if}
       {/if}

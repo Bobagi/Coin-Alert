@@ -1,5 +1,6 @@
 // Typed client for the Coin Hub JSON API. Cookies carry the session, so every call uses
 // credentials: 'include'. Paths are relative (same-origin: dev proxy or nginx in production).
+import { showVerifyModal } from './stores'
 
 export interface User {
   id: number
@@ -96,6 +97,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const rawText = await response.text()
   const data = rawText ? JSON.parse(rawText) : null
   if (!response.ok) {
+    // Unverified accounts get a styled global dialog instead of an easily-missed inline error.
+    if (response.status === 403 && data && data.code === 'email_unverified') {
+      showVerifyModal()
+    }
     const message = data && typeof data.error === 'string' ? data.error : `Request failed (${response.status})`
     throw new Error(message)
   }

@@ -529,6 +529,12 @@ func writeJSONError(responseWriter http.ResponseWriter, statusCode int, message 
 	writeJSON(responseWriter, statusCode, map[string]string{"error": message})
 }
 
+// writeJSONErrorCode is writeJSONError plus a machine-readable code the SPA can branch on (e.g. to
+// show a specific dialog) without parsing the human message.
+func writeJSONErrorCode(responseWriter http.ResponseWriter, statusCode int, message string, code string) {
+	writeJSON(responseWriter, statusCode, map[string]string{"error": message, "code": code})
+}
+
 // enforceEmailVerified loads the user and writes 403 if the email is not confirmed yet. Used to block
 // sensitive actions (connecting Binance, trading, robots) until the account confirms its email.
 func enforceEmailVerified(operationContext context.Context, responseWriter http.ResponseWriter, authService *service.AuthService, userIdentifier int64) bool {
@@ -538,7 +544,7 @@ func enforceEmailVerified(operationContext context.Context, responseWriter http.
 		return false
 	}
 	if !currentUser.IsEmailVerified() {
-		writeJSONError(responseWriter, http.StatusForbidden, "Confirm your email before using this feature.")
+		writeJSONErrorCode(responseWriter, http.StatusForbidden, "Confirm your email before using this feature.", "email_unverified")
 		return false
 	}
 	return true

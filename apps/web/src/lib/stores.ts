@@ -3,6 +3,20 @@ import type { User } from './api'
 
 export const currentUser = writable<User | null>(null)
 
+// A single global, styled modal (replaces window.alert): 'verify' renders the confirm-your-email
+// dialog (with a resend button), 'message' renders an arbitrary text (e.g. a locked-screen notice).
+export type AppModal = { type: 'verify' } | { type: 'message'; text: string }
+export const appModal = writable<AppModal | null>(null)
+export function showVerifyModal() {
+  appModal.set({ type: 'verify' })
+}
+export function showModalMessage(text: string) {
+  appModal.set({ type: 'message', text })
+}
+export function closeModal() {
+  appModal.set(null)
+}
+
 // Binance connection status, surfaced in the top nav. The Dashboard populates it after loading
 // credentials so the header can show the active environment from anywhere.
 export const binanceStatus = writable<{ has_active_credential: boolean; active_environment: string } | null>(null)

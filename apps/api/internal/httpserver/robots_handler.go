@@ -128,7 +128,7 @@ func (handler *RobotsHandler) handleRobots(responseWriter http.ResponseWriter, r
 		operationContext, cancel := context.WithTimeout(request.Context(), 6*time.Second)
 		defer cancel()
 		if !currentUser.IsEmailVerified() {
-			writeJSONError(responseWriter, http.StatusForbidden, "Confirm your email before using this feature.")
+			writeJSONErrorCode(responseWriter, http.StatusForbidden, "Confirm your email before using this feature.", "email_unverified")
 			return
 		}
 		robot, createError := handler.robotService.CreateRobot(operationContext, currentUser.Identifier, currentUser.IsAdmin, payload.toServiceInput())
@@ -166,7 +166,7 @@ func (handler *RobotsHandler) handleUpdate(responseWriter http.ResponseWriter, r
 	operationContext, cancel := context.WithTimeout(request.Context(), 6*time.Second)
 	defer cancel()
 	if !currentUser.IsEmailVerified() {
-		writeJSONError(responseWriter, http.StatusForbidden, "Confirm your email before using this feature.")
+		writeJSONErrorCode(responseWriter, http.StatusForbidden, "Confirm your email before using this feature.", "email_unverified")
 		return
 	}
 	robot, updateError := handler.robotService.UpdateRobot(operationContext, currentUser.Identifier, payload.ID, payload.toServiceInput())

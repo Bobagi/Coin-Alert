@@ -154,11 +154,16 @@ project at `/opt/investidor10` left on disk + the vhost kept in `sites-available
   (migration 0019 `auth_tokens` storing only the token hash, like sessions; `users.email_verified_at`,
   existing users grandfathered verified, Google sign-ups pre-verified). Endpoints `/auth/password/forgot`,
   `/auth/password/reset` (revokes all sessions), `/auth/email/verify`, `/auth/email/resend`; SPA pages
-  `#/reset` + `#/verify`. **Email verification is enforced**: an unverified account hits a full-screen
-  "confirm your email" wall (`VerifyWall`) and the API also returns 403 on connect-Binance / trade /
-  robot endpoints (`enforceEmailVerified`). Sending is live (`SMTP_PASSWORD` set with a Gmail App
-  Password); the email carries `Reply-To`/`Message-ID`/`Auto-Submitted` headers. If unset, `Sender` is
-  a no-op, `/auth/providers` reports `email:false`, and verification is not enforced.
+  `#/reset` + `#/verify`. **Email verification is enforced**: the API returns 403 `code:email_unverified`
+  on connect-Binance / trade / robot endpoints (`enforceEmailVerified`); unverified users may browse
+  but every save is blocked and the SPA shows a **styled global modal** (`AppModal`, driven by the
+  `appModal` store — also replaces the old `window.alert` in `LockOverlay`) plus a reminder banner.
+  Sending is live (`SMTP_PASSWORD` set with a Gmail App Password); emails carry
+  `Reply-To`/`Message-ID`/`Auto-Submitted` headers. If SMTP is unset, `Sender` is a no-op,
+  `/auth/providers` reports `email:false`, and verification is not enforced.
+- The **Rentabilidade** sub-tab (in the collapsible "Positions & performance" card) has a
+  `ProfitabilityPanel` chart: the selected coin's price line vs a dashed **average-buy-price** line, an
+  "if you sell everything now" unrealized P/L header, and per-coin P/L pills (green/red).
 
 ## Don't print secrets
 `.env`, `/root/commands_band_share.txt`, and any API keys. Never echo/commit them.

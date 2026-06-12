@@ -9,7 +9,8 @@
   import TopNav from './lib/TopNav.svelte'
   import ResetPassword from './lib/ResetPassword.svelte'
   import VerifyEmail from './lib/VerifyEmail.svelte'
-  import VerifyWall from './lib/VerifyWall.svelte'
+  import VerifyBanner from './lib/VerifyBanner.svelte'
+  import AppModal from './lib/AppModal.svelte'
 
   let loading = true
   let emailEnabled = false
@@ -37,20 +38,22 @@
 {:else if loading}
   <div class="center muted">{$t('app.loading')}</div>
 {:else if $currentUser}
+  <TopNav />
   {#if emailEnabled && !$currentUser.email_verified}
-    <!-- Hard block: an unverified account cannot use the app until it confirms its email. -->
-    <VerifyWall />
+    <!-- Unverified accounts can look around, but every save is blocked (API 403 + styled modal). -->
+    <VerifyBanner />
+  {/if}
+  {#if $route === 'account'}
+    <AccountSettings />
   {:else}
-    <TopNav />
-    {#if $route === 'account'}
-      <AccountSettings />
-    {:else}
-      <Dashboard />
-    {/if}
+    <Dashboard />
   {/if}
 {:else}
   <Login />
 {/if}
+
+<!-- Global styled dialog (confirm-email / locked-screen notices), mounted once. -->
+<AppModal />
 
 <style>
   .center { display: grid; place-items: center; min-height: 100vh; }
