@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api } from './api'
   import { currentUser, navigate } from './stores'
-  import { t, locale } from './i18n'
+  import { t, intlLocale } from './i18n'
   import LanguageDropdown from './LanguageDropdown.svelte'
 
   let name = $currentUser?.display_name ?? ''
@@ -25,7 +25,7 @@
   $: hasPassword = user?.has_password ?? false
   $: email = user?.email ?? ''
   $: memberSince = user?.created_at
-    ? new Date(user.created_at).toLocaleDateString($locale, { year: 'numeric', month: 'long', day: 'numeric' })
+    ? new Date(user.created_at).toLocaleDateString($intlLocale, { year: 'numeric', month: 'long', day: 'numeric' })
     : ''
   // Google-only accounts confirm deletion by retyping their email; password accounts re-enter it.
   $: canDelete = hasPassword ? deletePassword.length > 0 : deleteConfirm.trim().toLowerCase() === email.toLowerCase()

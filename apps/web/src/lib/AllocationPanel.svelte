@@ -13,7 +13,7 @@
     Tooltip
   } from 'chart.js'
   import { api, type Operation } from './api'
-  import { t, locale } from './i18n'
+  import { t, intlLocale } from './i18n'
 
   export let operations: Operation[] = []
 
@@ -57,9 +57,9 @@
   function formatMoney(value: number, quote: string) {
     const fiat: Record<string, string> = { BRL: 'BRL', EUR: 'EUR', GBP: 'GBP', TRY: 'TRY', USDT: 'USD', USDC: 'USD', BUSD: 'USD', FDUSD: 'USD', TUSD: 'USD', USD: 'USD' }
     if (fiat[quote]) {
-      return new Intl.NumberFormat($locale, { style: 'currency', currency: fiat[quote] }).format(value)
+      return new Intl.NumberFormat($intlLocale, { style: 'currency', currency: fiat[quote] }).format(value)
     }
-    return value.toLocaleString($locale, { maximumFractionDigits: 8 }) + (quote ? ' ' + quote : '')
+    return value.toLocaleString($intlLocale, { maximumFractionDigits: 8 }) + (quote ? ' ' + quote : '')
   }
 
   function selectSymbol(symbol: string) {
@@ -143,8 +143,8 @@
 
   function formatTimeLabel(timestamp: number) {
     const date = new Date(timestamp)
-    if (selectedPeriod === '24h') return date.toLocaleTimeString($locale, { hour: '2-digit', minute: '2-digit' })
-    return date.toLocaleDateString($locale, { day: '2-digit', month: '2-digit' })
+    if (selectedPeriod === '24h') return date.toLocaleTimeString($intlLocale, { hour: '2-digit', minute: '2-digit' })
+    return date.toLocaleDateString($intlLocale, { day: '2-digit', month: '2-digit' })
   }
 
   function renderLine() {
@@ -198,7 +198,7 @@
               color: '#b8ad8a',
               maxTicksLimit: 4,
               font: { size: 10 },
-              callback: (value) => Number(value).toLocaleString($locale, { notation: 'compact', maximumFractionDigits: 1 })
+              callback: (value) => Number(value).toLocaleString($intlLocale, { notation: 'compact', maximumFractionDigits: 1 })
             }
           }
         }

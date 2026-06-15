@@ -273,7 +273,7 @@ const en: Dictionary = {
   'hist.you': 'You',
   'hist.act.BUY': 'Buy',
   'hist.act.SELL': 'Sold',
-  'hist.act.SELL_ORDER_PLACED': 'Sell order placed',
+  'hist.act.SELL_ORDER_PLACED': 'Sell order',
   'hist.act.DAILY_BUY': 'Daily buy',
   'hist.act.SELL_CANCELED': 'Sell canceled (external)',
   'hist.act.SELL_EXPIRED': 'Sell expired',
@@ -541,7 +541,7 @@ const pt: Dictionary = {
   'hist.you': 'Você',
   'hist.act.BUY': 'Compra',
   'hist.act.SELL': 'Vendido',
-  'hist.act.SELL_ORDER_PLACED': 'Ordem de venda criada',
+  'hist.act.SELL_ORDER_PLACED': 'Ordem de venda',
   'hist.act.DAILY_BUY': 'Compra diária',
   'hist.act.SELL_CANCELED': 'Venda cancelada (externa)',
   'hist.act.SELL_EXPIRED': 'Venda expirada',
@@ -809,7 +809,7 @@ const es: Dictionary = {
   'hist.you': 'Tú',
   'hist.act.BUY': 'Compra',
   'hist.act.SELL': 'Vendido',
-  'hist.act.SELL_ORDER_PLACED': 'Orden de venta creada',
+  'hist.act.SELL_ORDER_PLACED': 'Orden de venta',
   'hist.act.DAILY_BUY': 'Compra diaria',
   'hist.act.SELL_CANCELED': 'Venta cancelada (externa)',
   'hist.act.SELL_EXPIRED': 'Venta caducada',
@@ -858,4 +858,34 @@ export const t = derived(locale, ($locale) => {
     }
     return message
   }
+})
+
+// Map each UI language to a regional BCP-47 tag so dates/times/numbers follow the
+// convention of the country, not the browser's locale. pt → Brazil (dd/mm/yyyy, 24h),
+// en → United States (mm/dd/yyyy, 12h), es → Latin America (es-419: dd/mm/yyyy, 12h),
+// the neutral pan-Latin-American Spanish (Spain would be es-ES with 24h).
+const intlTags: Record<Locale, string> = { pt: 'pt-BR', en: 'en-US', es: 'es-419' }
+
+// Reactive Intl tag for the active language — pass to any toLocale*/Intl call.
+export const intlLocale = derived(locale, ($locale) => intlTags[$locale])
+
+type DateInput = string | number | Date
+
+// Date + time, e.g. pt-BR → "13/06/2026 02:04:39", en-US → "06/13/2026 02:04:39 AM".
+// Built from two calls so there is no locale-specific comma between date and time.
+export const formatDateTime = derived(locale, ($locale) => {
+  const tag = intlTags[$locale]
+  return (value: DateInput): string => {
+    const date = new Date(value)
+    const day = date.toLocaleDateString(tag, { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const time = date.toLocaleTimeString(tag, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return `${day} ${time}`
+  }
+})
+
+// Date only; defaults to the country's full numeric date, override via `options`.
+export const formatDate = derived(locale, ($locale) => {
+  const tag = intlTags[$locale]
+  return (value: DateInput, options?: Intl.DateTimeFormatOptions): string =>
+    new Date(value).toLocaleDateString(tag, options ?? { day: '2-digit', month: '2-digit', year: 'numeric' })
 })

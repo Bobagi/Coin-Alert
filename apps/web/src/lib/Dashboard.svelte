@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { api, type TradingSettings, type CredentialStatus, type Operation, type Execution, type Robot } from './api'
   import { binanceStatus, currentUser } from './stores'
-  import { t, locale } from './i18n'
+  import { t, intlLocale, formatDateTime, formatDate } from './i18n'
   import AllocationPanel from './AllocationPanel.svelte'
   import ProfitabilityPanel from './ProfitabilityPanel.svelte'
   import PortfolioPanel from './PortfolioPanel.svelte'
@@ -149,7 +149,7 @@
   }
   $: needsLiveWarning = botActive && credentials?.active_environment === 'PRODUCTION' && !!settings && !settings.live_trading_enabled
   $: nextRun = nextDailyRun(localHourToUtc(dailyHourLocal))
-  $: nextRunLabel = nextRun.toLocaleString($locale, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+  $: nextRunLabel = nextRun.toLocaleString($intlLocale, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
   $: hoursUntilNext = Math.max(1, Math.round((nextRun.getTime() - Date.now()) / 3600000))
 
   const isConfigured = (environment: string) => !!credentials?.configured_environments?.includes(environment)
@@ -797,7 +797,7 @@
                   {#if operation.sell_order_id}
                     <span class="badge green" title={$t('ops.gtcHelp')}>✓</span>
                     {#if operation.sell_order_expires_at}
-                      <span class="muted gtc">{$t('ops.expiresAt', { date: new Date(operation.sell_order_expires_at).toLocaleDateString($locale, { day: '2-digit', month: '2-digit' }) })}</span>
+                      <span class="muted gtc">{$t('ops.expiresAt', { date: $formatDate(operation.sell_order_expires_at, { day: '2-digit', month: '2-digit' }) })}</span>
                     {:else}
                       <span class="muted gtc" title={$t('ops.gtcHelp')}>{$t('ops.gtc')}</span>
                     {/if}
@@ -807,7 +807,7 @@
                     <span class="muted">—</span>
                   {/if}
                 </div>
-                <div class="muted">{new Date(operation.purchased_at).toLocaleString()}</div>
+                <div class="muted">{$formatDateTime(operation.purchased_at)}</div>
                 <div class="col-actions ops-actions">
                   {#if operation.status === 'OPEN'}
                     {#if !operation.sell_order_id}
@@ -843,7 +843,7 @@
             </div>
             {#each executions as execution (execution.id)}
               <div class="hrow">
-                <div class="muted">{new Date(execution.executed_at).toLocaleString()}</div>
+                <div class="muted">{$formatDateTime(execution.executed_at)}</div>
                 <div><span class="badge {execution.operation_type === 'SELL' ? 'green' : execution.operation_type === 'SELL_ORDER_PLACED' ? 'blue' : execution.operation_type.startsWith('SELL_') ? 'red' : 'amber'}">{$t('hist.act.' + execution.operation_type)}</span></div>
                 <div><span class="by-badge {execution.initiated_by === 'BOT' ? 'bot' : 'user'}">{execution.initiated_by === 'BOT' ? $t('hist.bot') : $t('hist.you')}</span></div>
                 <div>{execution.symbol}</div>
@@ -946,7 +946,7 @@
 
   .table { display: flex; flex-direction: column; overflow-x: auto; }
   .trow { display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr 1.2fr 1.3fr 1.4fr 140px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 900px; }
-  .hrow { display: grid; grid-template-columns: 1.6fr 0.9fr 0.8fr 0.9fr 1fr 0.9fr 1fr 70px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 820px; }
+  .hrow { display: grid; grid-template-columns: 150px 0.9fr 0.8fr 0.9fr 1fr 0.9fr 1fr 70px; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--border); align-items: center; font-size: var(--text-sm); min-width: 760px; }
   .thead { color: var(--muted); font-weight: 700; font-size: var(--text-xs); }
   .col-actions { text-align: right; }
   .ops-actions { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-end; }
