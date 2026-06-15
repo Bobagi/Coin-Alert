@@ -587,14 +587,14 @@
             <span class="card-title">{$t('robots.title')}</span>
             <span class="card-subtitle">{$t('robots.subtitle')}</span>
           </div>
-          {#if selectedRobot && robotDraft}
-            <button class="btn-sm ghost" on:click={backToRobotList}>{$t('robots.back')}</button>
-          {:else if !creatingRobot}
-            <button class="btn-sm" disabled={!canCreateRobot} on:click={() => { creatingRobot = true; robotErr = ''; robotMsg = '' }}>{$t('robots.new')}</button>
-          {/if}
         </div>
         <details class="help"><summary>{$t('help.summary')}</summary><p>{$t('robots.help')}</p></details>
         <p class="muted">{isAdmin ? $t('robots.planAdmin') : $t('robots.planStandard', { n: robotLimit })}</p>
+        {#if selectedRobot && robotDraft}
+          <button class="btn-sm ghost robot-nav-btn" on:click={backToRobotList}>{$t('robots.back')}</button>
+        {:else if !creatingRobot}
+          <button class="btn-sm robot-nav-btn" disabled={!canCreateRobot} on:click={() => { creatingRobot = true; robotErr = ''; robotMsg = '' }}>{$t('robots.new')}</button>
+        {/if}
         {#if robotMsg}<p class="success mt-2">✓ {robotMsg}</p>{/if}
         {#if robotErr}<p class="error mt-2">{robotErr}</p>{/if}
 
@@ -693,11 +693,20 @@
           {#if !canCreateRobot}<p class="warn mt-3">{$t('robots.limitReached')}</p>{/if}
         {/if}
 
-        {#if settings}
-          <label class="checkbox-row live-row">
-            <input type="checkbox" bind:checked={settings.live_trading_enabled} on:change={saveSettings} disabled={settingsBusy} />
-            {$t('settings.enableLive')}
-          </label>
+        {#if settings && credentials?.active_environment === 'PRODUCTION'}
+          <div class="live-panel" class:armed={settings.live_trading_enabled}>
+            <div class="live-panel-head">
+              <div class="stack-title">
+                <span class="live-panel-title">{$t('settings.liveTitle')}</span>
+                <span class="badge {settings.live_trading_enabled ? 'green' : 'amber'}">{settings.live_trading_enabled ? $t('settings.liveOn') : $t('settings.liveOff')}</span>
+              </div>
+              <label class="switch" title={$t('settings.enableLive')}>
+                <input type="checkbox" bind:checked={settings.live_trading_enabled} on:change={saveSettings} disabled={settingsBusy} />
+                <span class="slider"></span>
+              </label>
+            </div>
+            <p class="muted live-panel-help">{$t('settings.liveHelp')}</p>
+          </div>
           {#if settingsErr}<p class="error mt-2">{settingsErr}</p>{/if}
         {/if}
       </section>
@@ -916,6 +925,7 @@
 
   .stack-title { display: flex; flex-direction: column; }
   .switch-inline { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; }
+  .robot-nav-btn { display: inline-flex; margin-top: var(--space-3); }
   .robot-editor-actions { display: flex; justify-content: space-between; gap: var(--space-2); }
   .robot-list { display: flex; flex-direction: column; gap: var(--space-2); }
   .robot-row { display: flex; align-items: center; gap: var(--space-2); width: 100%; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); color: var(--text); font: inherit; height: auto; }
@@ -923,7 +933,18 @@
   .robot-name { font-weight: 700; }
   .robot-sym, .robot-dca { font-size: var(--text-xs); }
   .robot-open { color: var(--brand); font-weight: 700; font-size: var(--text-xs); white-space: nowrap; }
-  .live-row { border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4); }
+  .live-panel { border-top: 1px solid var(--border); padding-top: var(--space-4); margin-top: var(--space-4); }
+  .live-panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .live-panel-title { font-weight: 700; }
+  .live-panel-help { margin-top: var(--space-2); font-size: var(--text-xs); }
+  .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex: none; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; inset: 0; cursor: pointer; background: var(--border-strong); border-radius: 999px; transition: background .2s; }
+  .switch .slider::before { content: ''; position: absolute; height: 20px; width: 20px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .2s; }
+  .switch input:checked + .slider { background: var(--brand-strong); }
+  .switch input:checked + .slider::before { transform: translateX(20px); }
+  .switch input:disabled + .slider { opacity: .6; cursor: default; }
+  .switch input:focus-visible + .slider { outline: 2px solid var(--brand); outline-offset: 2px; }
 
   .alloc-card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: var(--space-2); }
   .alloc-card > summary::-webkit-details-marker { display: none; }
