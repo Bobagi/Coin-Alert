@@ -517,6 +517,7 @@
           {/each}
         </div>
         <span class="muted mt-2">{$t('binance.envHint')}</span>
+        <span class="muted mt-2">{$t('binance.envIsolation')}</span>
       </div>
       {#if envMsg}<p class="success mt-2">{envMsg}</p>{/if}
       {#if envErr}<p class="error mt-2">{envErr}</p>{/if}
