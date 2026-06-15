@@ -16,18 +16,20 @@ import (
 // places a market buy plus a take-profit limit sell, and records the operation and executions.
 // Operations, executions and settings are scoped to the user's ACTIVE Binance environment.
 type UserTradingService struct {
-	credentialService   *UserCredentialService
-	settingsRepository  repository.UserTradingSettingsRepository
-	operationRepository repository.UserTradingOperationRepository
-	executionRepository repository.UserTradingOperationExecutionRepository
+	credentialService     *UserCredentialService
+	settingsRepository    repository.UserTradingSettingsRepository
+	operationRepository   repository.UserTradingOperationRepository
+	executionRepository   repository.UserTradingOperationExecutionRepository
+	maxQuoteAmountPerOrder float64 // 0 = no cap
 }
 
-func NewUserTradingService(credentialService *UserCredentialService, settingsRepository repository.UserTradingSettingsRepository, operationRepository repository.UserTradingOperationRepository, executionRepository repository.UserTradingOperationExecutionRepository) *UserTradingService {
+func NewUserTradingService(credentialService *UserCredentialService, settingsRepository repository.UserTradingSettingsRepository, operationRepository repository.UserTradingOperationRepository, executionRepository repository.UserTradingOperationExecutionRepository, maxQuoteAmountPerOrder float64) *UserTradingService {
 	return &UserTradingService{
-		credentialService:   credentialService,
-		settingsRepository:  settingsRepository,
-		operationRepository: operationRepository,
-		executionRepository: executionRepository,
+		credentialService:      credentialService,
+		settingsRepository:     settingsRepository,
+		operationRepository:    operationRepository,
+		executionRepository:    executionRepository,
+		maxQuoteAmountPerOrder: maxQuoteAmountPerOrder,
 	}
 }
 
@@ -41,6 +43,11 @@ func (service *UserTradingService) ExecuteBuy(operationContext context.Context, 
 	}
 	if quoteAmount <= 0 {
 		return nil, errors.New("the buy amount must be greater than zero")
+	}
+	// Server-side ceiling: a sanity bound so a tampered request (or a misconfigured robot) can never
+	// place an order far larger than intended. Applies to both manual buys and the automation worker.
+	if service.maxQuoteAmountPerOrder > 0 && quoteAmount > service.maxQuoteAmountPerOrder {
+		return nil, fmt.Errorf("the buy amount exceeds the maximum allowed per order (%.2f)", service.maxQuoteAmountPerOrder)
 	}
 
 	environmentConfiguration, configurationError := service.credentialService.LoadActiveEnvironmentConfiguration(operationContext, userIdentifier)

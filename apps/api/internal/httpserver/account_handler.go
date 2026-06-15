@@ -173,6 +173,6 @@ func (handler *AccountHandler) clearSessionCookie(responseWriter http.ResponseWr
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   handler.secureCookies,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 }

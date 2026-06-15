@@ -32,6 +32,7 @@ type AuthHandler struct {
 	CookieName          string
 	OAuthStateCookie    string
 	SecureCookies       bool
+	loginThrottle       *loginThrottle
 }
 
 func NewAuthHandler(authService *service.AuthService, sessionService *service.SessionService, googleOAuthService *service.GoogleOAuthService, accountEmailService *service.AccountEmailService, secureCookies bool) *AuthHandler {
@@ -43,6 +44,7 @@ func NewAuthHandler(authService *service.AuthService, sessionService *service.Se
 		CookieName:          "coin_hub_session",
 		OAuthStateCookie:    "coin_hub_oauth_state",
 		SecureCookies:       secureCookies,
+		loginThrottle:       newLoginThrottle(),
 	}
 }
 
@@ -124,12 +126,20 @@ func (handler *AuthHandler) handleLogin(responseWriter http.ResponseWriter, requ
 		return
 	}
 
+	// Per-account lockout: too many recent failures for this email get a 429 regardless of source IP,
+	// blunting distributed credential-stuffing that slips past nginx's per-IP limit.
+	if handler.loginThrottle.IsLocked(payload.Email) {
+		writeJSONError(responseWriter, http.StatusTooManyRequests, "Too many sign-in attempts. Please wait a few minutes and try again.")
+		return
+	}
+
 	authenticationContext, cancel := context.WithTimeout(request.Context(), 8*time.Second)
 	defer cancel()
 
 	authenticatedUser, authenticationError := handler.AuthService.Authenticate(authenticationContext, payload.Email, payload.Password)
 	if authenticationError != nil {
 		if errors.Is(authenticationError, service.ErrInvalidCredentials) || errors.Is(authenticationError, service.ErrAccountDisabled) {
+			handler.loginThrottle.RegisterFailure(payload.Email)
 			writeJSONError(responseWriter, http.StatusUnauthorized, authenticationError.Error())
 			return
 		}
@@ -138,6 +148,7 @@ func (handler *AuthHandler) handleLogin(responseWriter http.ResponseWriter, requ
 		return
 	}
 
+	handler.loginThrottle.RegisterSuccess(payload.Email)
 	handler.issueSessionAndRespond(responseWriter, request, authenticatedUser)
 }
 
@@ -475,7 +486,10 @@ func (handler *AuthHandler) setSessionCookie(responseWriter http.ResponseWriter,
 		Expires:  expiresAt,
 		HttpOnly: true,
 		Secure:   handler.SecureCookies,
-		SameSite: http.SameSiteLaxMode,
+		// Strict: the session cookie is never attached to cross-site requests, so it cannot be
+		// ridden by CSRF. All API calls are same-origin XHR from the SPA, so this does not affect
+		// normal use; the OAuth state cookie stays Lax because it must survive Google's redirect.
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 
@@ -488,7 +502,7 @@ func (handler *AuthHandler) clearSessionCookie(responseWriter http.ResponseWrite
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   handler.SecureCookies,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 

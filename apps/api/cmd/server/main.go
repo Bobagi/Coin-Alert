@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -50,7 +51,9 @@ func main() {
 
 	// Authentication.
 	passwordService := service.NewPasswordService()
-	sessionService := service.NewSessionService(userSessionRepository, 720*time.Hour)
+	// 7-day sessions: short enough to limit the blast radius of a stolen cookie, long enough not to
+	// nag a regular user. Override with SESSION_LIFETIME_HOURS.
+	sessionService := service.NewSessionService(userSessionRepository, sessionLifetimeFromEnv(168*time.Hour))
 	authService := service.NewAuthService(userRepository, userTradingSettingsRepository, accountDeletionAuditRepository, passwordService, secretCipher)
 	secureSessionCookies := os.Getenv("APP_SECURE_COOKIES") != "false"
 	googleOAuthService := service.NewGoogleOAuthService(
@@ -70,7 +73,7 @@ func main() {
 	userCredentialService := service.NewUserCredentialService(binanceCredentialRepository, secretCipher, testnetBaseURL, productionBaseURL)
 	apiHandler := httpserver.NewAPIHandler(sessionService, authService, authHandler.CookieName, userTradingSettingsRepository, userCredentialService, testnetBaseURL, productionBaseURL)
 
-	userTradingService := service.NewUserTradingService(userCredentialService, userTradingSettingsRepository, tradingOperationRepository, tradingOperationExecutionRepository)
+	userTradingService := service.NewUserTradingService(userCredentialService, userTradingSettingsRepository, tradingOperationRepository, tradingOperationExecutionRepository, maxQuoteAmountPerOrderFromEnv(100000))
 	operationsHandler := httpserver.NewOperationsHandler(sessionService, authService, authHandler.CookieName, userTradingService)
 
 	robotService := service.NewRobotService(tradingRobotRepository, userCredentialService)
@@ -99,8 +102,13 @@ func main() {
 	automationWorker.Start(applicationContext)
 	sessionService.StartExpiredSessionCleanup(applicationContext, time.Hour)
 
+	// Wrap every route with the body-size cap + same-origin (CSRF) guard. The allowed origin is the
+	// public app URL the SPA is served from.
+	allowedOrigin := environmentValueOrDefault("APP_BASE_URL", "https://coin.bobagi.space")
+	securedHandler := httpserver.SecurityMiddleware(rootRouter, allowedOrigin)
+
 	serverAddress := ":" + applicationConfiguration.ServerPort
-	httpServer := &http.Server{Addr: serverAddress, Handler: rootRouter}
+	httpServer := &http.Server{Addr: serverAddress, Handler: securedHandler}
 
 	go func() {
 		log.Printf("Coin Hub API listening on %s", serverAddress)
@@ -124,4 +132,32 @@ func environmentValueOrDefault(variableName string, fallbackValue string) string
 		return value
 	}
 	return fallbackValue
+}
+
+// sessionLifetimeFromEnv reads SESSION_LIFETIME_HOURS (positive integer hours), falling back to the
+// provided default when unset or invalid.
+func sessionLifetimeFromEnv(fallback time.Duration) time.Duration {
+	raw := os.Getenv("SESSION_LIFETIME_HOURS")
+	if raw == "" {
+		return fallback
+	}
+	hours, parseError := strconv.Atoi(raw)
+	if parseError != nil || hours <= 0 {
+		return fallback
+	}
+	return time.Duration(hours) * time.Hour
+}
+
+// maxQuoteAmountPerOrderFromEnv reads MAX_ORDER_QUOTE_AMOUNT (the per-order spending ceiling), falling
+// back to the provided default. A value of 0 disables the cap.
+func maxQuoteAmountPerOrderFromEnv(fallback float64) float64 {
+	raw := os.Getenv("MAX_ORDER_QUOTE_AMOUNT")
+	if raw == "" {
+		return fallback
+	}
+	parsed, parseError := strconv.ParseFloat(raw, 64)
+	if parseError != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
 }
